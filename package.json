@@ -44,6 +44,7 @@
     "vite": "npm:rolldown-vite@7.0.6"
   },
   "peerDependencies": {
+    "@tanstack/react-query": "^5",
     "clsx": "^2",
     "react": "^19",
     "react-dom": "^19",

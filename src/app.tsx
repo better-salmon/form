@@ -1,6 +1,13 @@
 import { useState } from "react";
+import {
+  QueryClient,
+  useQuery,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { useForm } from "@lib/create-form-hook";
-import { cn } from "./utils/cn";
+import { cn } from "@/utils/cn";
+
+const queryClient = new QueryClient();
 
 function focusNextField(name: string) {
   queueMicrotask(() => {
@@ -14,6 +21,16 @@ function focusNextField(name: string) {
   });
 }
 
+export function ReactQueryProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+}
+
 function focusSubmitButton() {
   queueMicrotask(() => {
     const button = document.querySelector<HTMLButtonElement>(
@@ -25,8 +42,20 @@ function focusSubmitButton() {
   });
 }
 
+async function getPhone() {
+  return new Promise<string>((resolve) =>
+    setTimeout(() => {
+      resolve("0987654321");
+    }, 1000),
+  );
+}
+
 function App() {
   const [count, setCount] = useState(0);
+  const { data: phone } = useQuery({
+    queryKey: ["phone"],
+    queryFn: getPhone,
+  });
   const { Form, Field, SubscribeTo } = useForm({
     defaultValues: {
       name: {
@@ -34,10 +63,10 @@ function App() {
         lastName: "Doe",
       },
       email: "john.doe@example.com",
-      phone: "1234567890",
+      phone,
     },
-    onDoneChange: ({ fieldsMap }) => {
-      console.log("onDoneChange", fieldsMap);
+    onDoneChange: ({ fieldsMap, changedFields }) => {
+      console.log("onDoneChange", fieldsMap, changedFields);
       for (const [name, field] of Object.entries(fieldsMap)) {
         if (!field.meta.isDone) {
           focusNextField(name);
@@ -166,32 +195,36 @@ function App() {
           },
           onMount: (props) => {
             console.log("onMount phone", props);
-            props.fieldApi.setDone(true);
+            props.fieldApi.setDone(props.value !== undefined);
           },
         }}
         render={(field) => (
           <label className="flex flex-col gap-2">
             <span className="px-2 text-sm font-medium">Phone</span>
-            <input
-              type="tel"
-              name={field.name}
-              value={field.value}
-              data-done={field.meta.isDone ? "true" : "false"}
-              onChange={(e) => {
-                field.handleChange(e.target.value);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  field.handleSubmit();
-                }
-              }}
-              className={cn("rounded-md border-2 border-gray-300 p-2", {
-                "border-red-500": field.meta.issue,
-                "border-green-500": field.meta.isDone,
-              })}
-            />
+            {field.value === undefined ? (
+              "loading"
+            ) : (
+              <input
+                type="tel"
+                name={field.name}
+                value={field.value}
+                data-done={field.meta.isDone ? "true" : "false"}
+                onChange={(e) => {
+                  field.handleChange(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    field.handleSubmit();
+                  }
+                }}
+                className={cn("rounded-md border-2 border-gray-300 p-2", {
+                  "border-red-500": field.meta.issue,
+                  "border-green-500": field.meta.isDone,
+                })}
+              />
+            )}
           </label>
         )}
       />

@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./app.tsx";
-import "./index.css";
+import App, { ReactQueryProvider } from "@/app.tsx";
+import "@/index.css";
 
 const root = document.querySelector("#root");
 
@@ -11,6 +11,8 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <ReactQueryProvider>
+      <App />
+    </ReactQueryProvider>
   </StrictMode>,
 );

@@ -33,6 +33,7 @@ type DependencyFields<T extends DefaultValues, D extends keyof T> = Prettify<
 
 interface OnDoneChangeProps<T extends DefaultValues> {
   fieldsMap: FieldsMap<T>;
+  changedFields: readonly (keyof T)[];
 }
 
 type Validator<
@@ -60,6 +61,7 @@ interface FieldValidators<
   readonly onSubmit?: Validator<T, K, D>;
   readonly onChange?: Validator<T, K, D>;
   readonly onMount?: Validator<T, K, D>;
+  readonly onSubmitAsync?: Validator<T, K, D>;
 }
 
 interface Field<T = unknown> {
@@ -98,6 +100,7 @@ interface Store<T extends DefaultValues> {
   fieldsMap: FieldsMap<T>;
   validatorsMap: ValidatorsMap<T>;
   dependenciesMap: DependenciesMap<T>;
+  defaultValues: T;
 }
 
 interface Actions<T extends DefaultValues> {
@@ -113,6 +116,7 @@ interface Actions<T extends DefaultValues> {
     field: K,
     dependencies?: readonly Exclude<keyof T, K>[],
   ) => void;
+  setDefaultValues: (defaultValues: T) => void;
 }
 
 function createInitialFieldsMap<T extends DefaultValues>(
@@ -151,12 +155,12 @@ function getFieldNames<T extends DefaultValues>(
   return Object.keys(fieldsMap) as (keyof T)[];
 }
 
-function createFormStoreMutative<T extends DefaultValues>(options: {
-  defaultValues: T;
-  onDoneChange?: (props: OnDoneChangeProps<T>) => void;
-}) {
+function createFormStoreMutative<T extends DefaultValues>(
+  options: UseFormOptions<T>,
+) {
   return createStore<Store<T> & Actions<T>>()(
     mutative((set, get) => ({
+      defaultValues: options.defaultValues,
       validatorsMap: {} as ValidatorsMap<T>,
       dependenciesMap: {} as DependenciesMap<T>,
       setValidators: <K extends keyof T, D extends Exclude<keyof T, K> = never>(
@@ -258,7 +262,10 @@ function createFormStoreMutative<T extends DefaultValues>(options: {
 
         if (prevIsDone !== isDone && options.onDoneChange) {
           const snapshot = get();
-          options.onDoneChange({ fieldsMap: snapshot.fieldsMap });
+          options.onDoneChange({
+            fieldsMap: snapshot.fieldsMap,
+            changedFields: [field],
+          });
         }
       },
       setDependencies: <K extends keyof T>(
@@ -268,6 +275,16 @@ function createFormStoreMutative<T extends DefaultValues>(options: {
         set((state) => {
           (state.dependenciesMap as DependenciesMap<T>)[field] =
             dependencies ?? [];
+        });
+      },
+      setDefaultValues: (defaultValues: T) => {
+        set((state) => {
+          (state.defaultValues as T) = defaultValues;
+
+          for (const [field] of Object.entries(defaultValues)) {
+            (state.fieldsMap as FieldsMap<T>)[field as keyof T].value ??=
+              defaultValues[field as keyof T];
+          }
         });
       },
     })),
@@ -464,10 +481,12 @@ function useField<
   };
 }
 
-export function useForm<T extends DefaultValues>(options: {
+interface UseFormOptions<T extends DefaultValues> {
   defaultValues: T;
   onDoneChange?: (props: OnDoneChangeProps<T>) => void;
-}) {
+}
+
+export function useForm<T extends DefaultValues>(options: UseFormOptions<T>) {
   const [formStore] = useState(() => createFormStoreMutative(options));
 
   type BoundedField = <
@@ -484,6 +503,12 @@ export function useForm<T extends DefaultValues>(options: {
     dependencies: readonly K[];
     render: (fieldsMap: Prettify<Pick<FieldsMap<T>, K>>) => React.ReactNode;
   }) => React.ReactNode;
+
+  useIsomorphicEffect(() => {
+    if (!deepEqual(options.defaultValues, formStore.getState().defaultValues)) {
+      formStore.getState().setDefaultValues(options.defaultValues);
+    }
+  }, [options.defaultValues, formStore]);
 
   return {
     Field: Field as BoundedField,
