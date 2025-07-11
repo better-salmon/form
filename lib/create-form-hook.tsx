@@ -11,32 +11,33 @@ type Prettify<T> = {
 
 type DefaultValues = Record<string, unknown>;
 
-type FieldsMap<T extends DefaultValues> = {
+export type FieldsMap<T extends DefaultValues> = {
   [K in keyof T]: Field<T[K]>;
 };
 
-type ValidatorsMap<T extends DefaultValues> = {
+export type ValidatorsMap<T extends DefaultValues> = {
   [K in keyof T]?: FieldValidators<T, K, Exclude<keyof T, K>>;
 };
 
-type DependenciesMap<T extends DefaultValues> = {
+export type DependenciesMap<T extends DefaultValues> = {
   [K in keyof T]?: readonly (keyof T)[];
 };
 
-type FieldEntries<T extends DefaultValues> = {
+export type FieldEntries<T extends DefaultValues> = {
   [K in keyof T]: [K, T[K]];
 }[keyof T][];
 
-type DependencyFields<T extends DefaultValues, D extends keyof T> = Prettify<
-  Pick<FieldsMap<T>, D>
->;
+export type DependencyFields<
+  T extends DefaultValues,
+  D extends keyof T,
+> = Prettify<Pick<FieldsMap<T>, D>>;
 
-interface OnDoneChangeProps<T extends DefaultValues> {
+export interface OnDoneChangeProps<T extends DefaultValues> {
   fieldsMap: FieldsMap<T>;
   changedFields: readonly (keyof T)[];
 }
 
-type Validator<
+export type Validator<
   T extends DefaultValues,
   K extends keyof T,
   D extends Exclude<keyof T, K> = never,
@@ -52,7 +53,7 @@ type Validator<
   };
 }) => void;
 
-type AsyncValidator<
+export type AsyncValidator<
   T extends DefaultValues,
   K extends keyof T,
   D extends Exclude<keyof T, K> = never,
@@ -68,7 +69,7 @@ type AsyncValidator<
   };
 }) => Promise<void>;
 
-interface FieldValidators<
+export interface FieldValidators<
   T extends DefaultValues,
   K extends keyof T,
   D extends Exclude<keyof T, K> = never,
@@ -80,7 +81,7 @@ interface FieldValidators<
   readonly onSubmitAsync?: AsyncValidator<T, K, D>;
 }
 
-interface Field<T = unknown> {
+export interface Field<T = unknown> {
   value: T;
   meta: {
     isTouched: boolean;
@@ -92,12 +93,12 @@ interface Field<T = unknown> {
   };
 }
 
-interface FormApi<T extends DefaultValues, D extends keyof T = never> {
+export interface FormApi<T extends DefaultValues, D extends keyof T = never> {
   submit: (fields?: readonly (keyof T)[]) => Promise<void>;
   dependencies: DependencyFields<T, D>;
 }
 
-interface FieldApi<
+export interface FieldApi<
   T extends DefaultValues,
   K extends keyof T,
   D extends Exclude<keyof T, K> = never,
@@ -113,14 +114,14 @@ interface FieldApi<
   formApi: Prettify<FormApi<T, D>>;
 }
 
-interface Store<T extends DefaultValues> {
+export interface Store<T extends DefaultValues> {
   fieldsMap: FieldsMap<T>;
   validatorsMap: ValidatorsMap<T>;
   dependenciesMap: DependenciesMap<T>;
   defaultValues: T;
 }
 
-interface Actions<T extends DefaultValues> {
+export interface Actions<T extends DefaultValues> {
   setValue: <K extends keyof T>(field: K, value: T[K]) => void;
   submit: (fields?: readonly (keyof T)[]) => Promise<void>;
   setIssue: (field: keyof T, issue?: string) => void;
@@ -135,6 +136,44 @@ interface Actions<T extends DefaultValues> {
     dependencies?: readonly Exclude<keyof T, K>[],
   ) => void;
   setDefaultValues: (defaultValues: T) => void;
+}
+
+export interface UseFormOptions<T extends DefaultValues> {
+  defaultValues: T;
+  onDoneChange?: (props: OnDoneChangeProps<T>) => void;
+}
+
+export interface UseFormResult<T extends DefaultValues> {
+  Field: <K extends keyof T, D extends Exclude<keyof T, K> = never>(props: {
+    name: K;
+    validators?: FieldValidators<T, K, D>;
+    dependencies?: readonly D[];
+    render: (props: Prettify<FieldApi<T, K, D>>) => React.ReactNode;
+  }) => React.ReactNode;
+
+  SubscribeTo: <K extends keyof T>(props: {
+    dependencies: readonly K[];
+    render: (fieldsMap: Prettify<Pick<FieldsMap<T>, K>>) => React.ReactNode;
+  }) => React.ReactNode;
+
+  formStore: ReturnType<typeof createFormStoreMutative<T>>;
+
+  Form: (props: React.ComponentProps<"form">) => React.ReactElement;
+}
+
+export interface CreateFormHookResult<T extends DefaultValues> {
+  useForm: (options: UseFormOptions<T>) => UseFormResult<T>;
+  useField: <
+    K extends keyof T,
+    D extends Exclude<keyof T, K> = never,
+  >(options: {
+    name: K;
+    validators?: FieldValidators<T, K, D>;
+    dependencies?: readonly D[];
+  }) => Prettify<FieldApi<T, K, D>>;
+  useSubscribeTo: <K extends keyof T>(props: {
+    dependencies: readonly K[];
+  }) => Prettify<Pick<FieldsMap<T>, K>>;
 }
 
 function createInitialFieldsMap<T extends DefaultValues>(
@@ -615,28 +654,10 @@ function useField<
   };
 }
 
-interface UseFormOptions<T extends DefaultValues> {
-  defaultValues: T;
-  onDoneChange?: (props: OnDoneChangeProps<T>) => void;
-}
-
-export function useForm<T extends DefaultValues>(options: UseFormOptions<T>) {
+export function useForm<T extends DefaultValues>(
+  options: UseFormOptions<T>,
+): UseFormResult<T> {
   const [formStore] = useState(() => createFormStoreMutative(options));
-
-  type BoundedField = <
-    K extends keyof T,
-    D extends Exclude<keyof T, K> = never,
-  >(props: {
-    name: K;
-    validators?: FieldValidators<T, K, D>;
-    dependencies?: readonly D[];
-    render: (props: Prettify<FieldApi<T, K, D>>) => React.ReactNode;
-  }) => React.ReactNode;
-
-  type BoundedSubscribeTo = <K extends keyof T>(props: {
-    dependencies: readonly K[];
-    render: (fieldsMap: Prettify<Pick<FieldsMap<T>, K>>) => React.ReactNode;
-  }) => React.ReactNode;
 
   useIsomorphicEffect(() => {
     if (!deepEqual(options.defaultValues, formStore.getState().defaultValues)) {
@@ -645,8 +666,8 @@ export function useForm<T extends DefaultValues>(options: UseFormOptions<T>) {
   }, [options.defaultValues, formStore]);
 
   return {
-    Field: Field as BoundedField,
-    SubscribeTo: SubscribeTo as BoundedSubscribeTo,
+    Field,
+    SubscribeTo,
     formStore,
     Form: (props: React.ComponentProps<"form">) => (
       <FormProvider
@@ -660,27 +681,12 @@ export function useForm<T extends DefaultValues>(options: UseFormOptions<T>) {
   };
 }
 
-export function createFormHook<T extends DefaultValues>() {
-  type BoundedUseForm = (
-    options: UseFormOptions<T>,
-  ) => ReturnType<typeof useForm<T>>;
-
-  type BoundedUseField = <
-    K extends keyof T,
-    D extends Exclude<keyof T, K> = never,
-  >(options: {
-    name: K;
-    validators?: FieldValidators<T, K, D>;
-    dependencies?: readonly D[];
-  }) => ReturnType<typeof useField<T, K, D>>;
-
-  type BoundedUseSubscribeTo = <K extends keyof T>(props: {
-    dependencies: readonly K[];
-  }) => Prettify<Pick<FieldsMap<T>, K>>;
-
+export function createFormHook<
+  T extends DefaultValues,
+>(): CreateFormHookResult<T> {
   return {
-    useForm: useForm as BoundedUseForm,
-    useField: useField as BoundedUseField,
-    useSubscribeTo: useSubscribeTo as BoundedUseSubscribeTo,
+    useForm,
+    useField,
+    useSubscribeTo,
   };
 }

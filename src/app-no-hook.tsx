@@ -89,7 +89,6 @@ function App() {
       <h3 className="text-2xl font-bold">All in one file</h3>
       <Field
         name="name"
-        dependencies={["phone"]}
         validators={{
           onChange: (props) => {
             console.log("onChange name", props);
