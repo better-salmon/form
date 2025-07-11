@@ -37,7 +37,7 @@ export function Name() {
             if (e.key === "Enter") {
               e.preventDefault();
               e.stopPropagation();
-              field.handleSubmit();
+              void field.handleSubmit();
             }
           }}
           onChange={(e) => {

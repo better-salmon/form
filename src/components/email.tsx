@@ -38,7 +38,7 @@ export function Email() {
             if (e.key === "Enter") {
               e.preventDefault();
               e.stopPropagation();
-              field.handleSubmit();
+              void field.handleSubmit();
             }
           }}
           className={cn("rounded-md border-2 border-gray-300 p-2 pr-10", {

@@ -105,7 +105,7 @@ interface FieldApi<
   name: K;
   value: T[K];
   handleChange: (value: T[K]) => void;
-  handleSubmit: () => void;
+  handleSubmit: () => Promise<void>;
   handleBlur: () => void;
   setIssue: (issue: string | undefined) => void;
   setDone: (isDone: boolean) => void;
@@ -532,8 +532,8 @@ function useField<
     setValue(options.name, value);
   };
 
-  const handleSubmit = () => {
-    void submit([options.name]);
+  const handleSubmit = async () => {
+    await submit([options.name]);
   };
 
   const formApi: FormApi<T, D> = {
