@@ -58,6 +58,7 @@ export function Name() {
           {field.meta.isDone && !field.meta.isValidating && (
             <span className="text-green-500">✅</span>
           )}
+          {field.meta.issue && <span className="text-red-500">❌</span>}
         </div>
       </div>
     </label>

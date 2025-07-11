@@ -89,6 +89,7 @@ function App() {
         e.stopPropagation();
       }}
     >
+      <h3 className="text-2xl font-bold">Split into multiple files</h3>
       <Name />
       <Email />
       <Phone />
@@ -100,7 +101,7 @@ function App() {
         }}
         className="cursor-pointer rounded-md border-2 border-gray-300 bg-blue-500 p-2 text-white hover:bg-blue-600"
       >
-        Button was clicked {count} times
+        Button was clicked {count} times (render optimization showcase)
       </button>
     </Form>
   );
