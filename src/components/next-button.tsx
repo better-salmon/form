@@ -2,15 +2,16 @@ import { useSubscribeTo } from "@/hooks/my-form";
 
 export function NextButton() {
   const fields = useSubscribeTo({
-    dependencies: ["name", "email", "phone"],
-    render: (fieldsMap) => (
-      <button type="submit" disabled={!fieldsMap.name.meta.isDone}>
-        Submit
-      </button>
-    ),
+    dependencies: ["email", "phone", "name"],
   });
 
-  const isDisabled = !Object.values(fields).every((field) => field.meta.isDone);
+  const isSomeValidating = Object.values(fields).some(
+    (field) => field.meta.isValidating,
+  );
+
+  const isEveryDone = Object.values(fields).every((field) => field.meta.isDone);
+
+  const isDisabled = isSomeValidating || !isEveryDone;
 
   return (
     <button

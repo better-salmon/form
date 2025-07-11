@@ -444,9 +444,8 @@ function SubscribeTo<T extends DefaultValues, K extends keyof T>(props: {
   dependencies: readonly K[];
   render: (fieldsMap: Prettify<Pick<FieldsMap<T>, K>>) => React.ReactNode;
 }) {
-  const fields = useSubscribeTo({
+  const fields = useSubscribeTo<T, K>({
     dependencies: props.dependencies,
-    render: props.render,
   });
 
   return props.render(fields);
@@ -454,7 +453,6 @@ function SubscribeTo<T extends DefaultValues, K extends keyof T>(props: {
 
 function useSubscribeTo<T extends DefaultValues, K extends keyof T>(props: {
   dependencies: readonly K[];
-  render: (fieldsMap: Prettify<Pick<FieldsMap<T>, K>>) => React.ReactNode;
 }) {
   const formStore = use(FormContext) as StoreApi<Store<T> & Actions<T>> | null;
 
@@ -678,7 +676,6 @@ export function createFormHook<T extends DefaultValues>() {
 
   type BoundedUseSubscribeTo = <K extends keyof T>(props: {
     dependencies: readonly K[];
-    render: (fieldsMap: Prettify<Pick<FieldsMap<T>, K>>) => React.ReactNode;
   }) => Prettify<Pick<FieldsMap<T>, K>>;
 
   return {
