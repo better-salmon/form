@@ -52,6 +52,22 @@ type Validator<
   };
 }) => void;
 
+type AsyncValidator<
+  T extends DefaultValues,
+  K extends keyof T,
+  D extends Exclude<keyof T, K> = never,
+> = (props: {
+  value: T[K];
+  fieldApi: {
+    meta: Field<T[K]>["meta"];
+    setIssue: (issue?: string) => void;
+    setDone: (isDone: boolean) => void;
+    formApi: {
+      dependencies: DependencyFields<T, D>;
+    };
+  };
+}) => Promise<void>;
+
 interface FieldValidators<
   T extends DefaultValues,
   K extends keyof T,
@@ -61,7 +77,7 @@ interface FieldValidators<
   readonly onSubmit?: Validator<T, K, D>;
   readonly onChange?: Validator<T, K, D>;
   readonly onMount?: Validator<T, K, D>;
-  readonly onSubmitAsync?: Validator<T, K, D>;
+  readonly onSubmitAsync?: AsyncValidator<T, K, D>;
 }
 
 interface Field<T = unknown> {
@@ -72,11 +88,12 @@ interface Field<T = unknown> {
     numberOfSubmissions: number;
     isDone: boolean;
     issue?: string;
+    isValidating: boolean;
   };
 }
 
 interface FormApi<T extends DefaultValues, D extends keyof T = never> {
-  submit: (fields?: readonly (keyof T)[]) => void;
+  submit: (fields?: readonly (keyof T)[]) => Promise<void>;
   dependencies: DependencyFields<T, D>;
 }
 
@@ -105,9 +122,10 @@ interface Store<T extends DefaultValues> {
 
 interface Actions<T extends DefaultValues> {
   setValue: <K extends keyof T>(field: K, value: T[K]) => void;
-  submit: (fields?: readonly (keyof T)[]) => void;
+  submit: (fields?: readonly (keyof T)[]) => Promise<void>;
   setIssue: (field: keyof T, issue?: string) => void;
   setDone: (field: keyof T, isDone: boolean) => void;
+  setValidating: (field: keyof T, isValidating: boolean) => void;
   setValidators: <K extends keyof T, D extends Exclude<keyof T, K> = never>(
     field: K,
     validators?: FieldValidators<T, K, D>,
@@ -134,6 +152,7 @@ function createInitialFieldsMap<T extends DefaultValues>(
           numberOfChanges: 0,
           numberOfSubmissions: 0,
           isDone: false,
+          isValidating: false,
         },
       },
     ]),
@@ -185,6 +204,12 @@ function createFormStoreMutative<T extends DefaultValues>(
         });
 
         const snapshot = get();
+
+        // Don't run validation if field is already validating
+        if (snapshot.fieldsMap[field].meta.isValidating) {
+          return;
+        }
+
         const dependencies = snapshot.dependenciesMap[field] || [];
         const dependenciesData = createDependencyFields<T, K>(
           snapshot.fieldsMap,
@@ -207,15 +232,29 @@ function createFormStoreMutative<T extends DefaultValues>(
           },
         });
       },
-      submit: (fields?: readonly (keyof T)[]) => {
+      submit: async (fields?: readonly (keyof T)[]) => {
         const snapshot = get();
         const fieldsToSubmit = fields ?? getFieldNames(snapshot.fieldsMap);
 
+        const fieldsValidationState = new Map<
+          keyof T,
+          {
+            issue?: string;
+            isDone: boolean;
+          }
+        >();
+
+        // Handle synchronous validators first
         for (const fieldName of fieldsToSubmit) {
           set((state) => {
             (state.fieldsMap as FieldsMap<T>)[fieldName].meta
               .numberOfSubmissions++;
           });
+
+          // Don't run validation if field is already validating
+          if (snapshot.fieldsMap[fieldName].meta.isValidating) {
+            continue;
+          }
 
           const dependencies = snapshot.dependenciesMap[fieldName] || [];
           const dependenciesData = createDependencyFields<T, typeof fieldName>(
@@ -228,9 +267,17 @@ function createFormStoreMutative<T extends DefaultValues>(
             fieldApi: {
               meta: snapshot.fieldsMap[fieldName].meta,
               setIssue: (issue?: string) => {
+                fieldsValidationState.set(fieldName, {
+                  issue,
+                  isDone: snapshot.fieldsMap[fieldName].meta.isDone,
+                });
                 snapshot.setIssue(fieldName, issue);
               },
               setDone: (isDone: boolean) => {
+                fieldsValidationState.set(fieldName, {
+                  issue: fieldsValidationState.get(fieldName)?.issue,
+                  isDone,
+                });
                 snapshot.setDone(fieldName, isDone);
               },
               formApi: {
@@ -238,6 +285,69 @@ function createFormStoreMutative<T extends DefaultValues>(
               },
             },
           });
+        }
+
+        // Handle asynchronous validators
+        const asyncValidations = fieldsToSubmit
+          .map((fieldName) => {
+            const validator = snapshot.validatorsMap[fieldName]?.onSubmitAsync;
+
+            if (!validator) {
+              return null;
+            }
+
+            const fieldWithErrors = fieldsValidationState.get(fieldName);
+
+            if (fieldWithErrors?.issue || fieldWithErrors?.isDone) {
+              return null;
+            }
+
+            // Don't run async validation if field is already validating
+            if (snapshot.fieldsMap[fieldName].meta.isValidating) {
+              return null;
+            }
+
+            return async () => {
+              const currentSnapshot = get();
+              const dependencies =
+                currentSnapshot.dependenciesMap[fieldName] || [];
+              const dependenciesData = createDependencyFields<
+                T,
+                typeof fieldName
+              >(currentSnapshot.fieldsMap, dependencies);
+
+              // Set validating state
+              currentSnapshot.setValidating(fieldName, true);
+
+              try {
+                await validator({
+                  value: currentSnapshot.fieldsMap[fieldName].value,
+                  fieldApi: {
+                    meta: currentSnapshot.fieldsMap[fieldName].meta,
+                    setIssue: (issue?: string) => {
+                      currentSnapshot.setIssue(fieldName, issue);
+                    },
+                    setDone: (isDone: boolean) => {
+                      currentSnapshot.setDone(fieldName, isDone);
+                    },
+                    formApi: {
+                      dependencies: dependenciesData,
+                    },
+                  },
+                });
+              } finally {
+                // Clear validating state
+                get().setValidating(fieldName, false);
+              }
+            };
+          })
+          .filter((validation) => validation !== null);
+
+        // Execute async validations in parallel
+        if (asyncValidations.length > 0) {
+          await Promise.allSettled(
+            asyncValidations.map((validation) => validation()),
+          );
         }
       },
       setIssue: (field: keyof T, issue?: string) => {
@@ -248,6 +358,12 @@ function createFormStoreMutative<T extends DefaultValues>(
           if (issue) {
             fieldsMap[field].meta.isDone = false;
           }
+        });
+      },
+      setValidating: (field: keyof T, isValidating: boolean) => {
+        set((state) => {
+          const fieldsMap = state.fieldsMap as FieldsMap<T>;
+          fieldsMap[field].meta.isValidating = isValidating;
         });
       },
       setDone: (field: keyof T, isDone: boolean) => {
@@ -328,6 +444,18 @@ function SubscribeTo<T extends DefaultValues, K extends keyof T>(props: {
   dependencies: readonly K[];
   render: (fieldsMap: Prettify<Pick<FieldsMap<T>, K>>) => React.ReactNode;
 }) {
+  const fields = useSubscribeTo({
+    dependencies: props.dependencies,
+    render: props.render,
+  });
+
+  return props.render(fields);
+}
+
+function useSubscribeTo<T extends DefaultValues, K extends keyof T>(props: {
+  dependencies: readonly K[];
+  render: (fieldsMap: Prettify<Pick<FieldsMap<T>, K>>) => React.ReactNode;
+}) {
   const formStore = use(FormContext) as StoreApi<Store<T> & Actions<T>> | null;
 
   if (!formStore) {
@@ -341,9 +469,7 @@ function SubscribeTo<T extends DefaultValues, K extends keyof T>(props: {
       ) as Pick<FieldsMap<T>, K>,
   );
 
-  const fields = useStore(formStore, selector);
-
-  return props.render(fields);
+  return useStore(formStore, selector);
 }
 
 function useField<
@@ -409,12 +535,12 @@ function useField<
   };
 
   const handleSubmit = () => {
-    submit([options.name]);
+    void submit([options.name]);
   };
 
   const formApi: FormApi<T, D> = {
-    submit: (fields?: readonly (keyof T)[]) => {
-      submit(fields);
+    submit: async (fields?: readonly (keyof T)[]) => {
+      await submit(fields);
     },
     dependencies,
   };
@@ -434,6 +560,11 @@ function useField<
   );
 
   const handleBlur = () => {
+    // Don't run validation if field is already validating
+    if (field.meta.isValidating) {
+      return;
+    }
+
     options.validators?.onBlur?.({
       value: field.value,
       fieldApi: {
@@ -448,6 +579,11 @@ function useField<
   };
 
   useIsomorphicEffect(() => {
+    // Don't run validation if field is already validating
+    if (field.meta.isValidating) {
+      return;
+    }
+
     options.validators?.onMount?.({
       value: field.value,
       fieldApi: {
@@ -523,5 +659,31 @@ export function useForm<T extends DefaultValues>(options: UseFormOptions<T>) {
         <form {...props} />
       </FormProvider>
     ),
+  };
+}
+
+export function createFormHook<T extends DefaultValues>() {
+  type BoundedUseForm = (
+    options: UseFormOptions<T>,
+  ) => ReturnType<typeof useForm<T>>;
+
+  type BoundedUseField = <
+    K extends keyof T,
+    D extends Exclude<keyof T, K> = never,
+  >(options: {
+    name: K;
+    validators?: FieldValidators<T, K, D>;
+    dependencies?: readonly D[];
+  }) => ReturnType<typeof useField<T, K, D>>;
+
+  type BoundedUseSubscribeTo = <K extends keyof T>(props: {
+    dependencies: readonly K[];
+    render: (fieldsMap: Prettify<Pick<FieldsMap<T>, K>>) => React.ReactNode;
+  }) => Prettify<Pick<FieldsMap<T>, K>>;
+
+  return {
+    useForm: useForm as BoundedUseForm,
+    useField: useField as BoundedUseField,
+    useSubscribeTo: useSubscribeTo as BoundedUseSubscribeTo,
   };
 }
