@@ -9,6 +9,7 @@
     "check-types": "tsc -p tsconfig.lib.json && tsc -p tsconfig.app.json",
     "dev": "vite",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "lint": "eslint --max-warnings 0 .",
     "preview": "vite preview"
   },
