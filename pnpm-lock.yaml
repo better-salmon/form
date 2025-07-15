@@ -41,10 +41,10 @@ importers:
         version: 9.31.0
       '@tailwindcss/vite':
         specifier: 4.1.11
-        version: 4.1.11(rolldown-vite@7.0.8(@types/node@24.0.13)(jiti@2.4.2))
+        version: 4.1.11(rolldown-vite@7.0.8(@types/node@24.0.14)(jiti@2.4.2))
       '@types/node':
-        specifier: 24.0.13
-        version: 24.0.13
+        specifier: 24.0.14
+        version: 24.0.14
       '@types/react':
         specifier: 19.1.8
         version: 19.1.8
@@ -53,7 +53,7 @@ importers:
         version: 19.1.6(@types/react@19.1.8)
       '@vitejs/plugin-react':
         specifier: 4.6.0
-        version: 4.6.0(rolldown-vite@7.0.8(@types/node@24.0.13)(jiti@2.4.2))
+        version: 4.6.0(rolldown-vite@7.0.8(@types/node@24.0.14)(jiti@2.4.2))
       babel-plugin-react-compiler:
         specifier: 19.1.0-rc.2
         version: 19.1.0-rc.2
@@ -104,7 +104,7 @@ importers:
         version: 8.37.0(eslint@9.31.0(jiti@2.4.2))(typescript@5.8.3)
       vite:
         specifier: npm:rolldown-vite@7.0.8
-        version: rolldown-vite@7.0.8(@types/node@24.0.13)(jiti@2.4.2)
+        version: rolldown-vite@7.0.8(@types/node@24.0.14)(jiti@2.4.2)
 
 packages:
 
@@ -657,8 +657,8 @@ packages:
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
-  '@types/node@24.0.13':
-    resolution: {integrity: sha512-Qm9OYVOFHFYg3wJoTSrz80hoec5Lia/dPp84do3X7dZvLikQvM1YpmvTBEdIr/e+U8HTkFjLHLnl78K/qjf+jQ==}
+  '@types/node@24.0.14':
+    resolution: {integrity: sha512-4zXMWD91vBLGRtHK3YbIoFMia+1nqEz72coM42C5ETjnNCa/heoj7NT1G67iAfOqMmcfhuCZ4uNpyz8EjlAejw==}
 
   '@types/react-dom@19.1.6':
     resolution: {integrity: sha512-4hOiT/dwO8Ko0gV1m/TJZYk3y0KBnY9vzDh7W+DH17b2HFSOGgdj33dhihPeuy3l0q23+4e+hoXHV6hCC4dCXw==}
@@ -2774,12 +2774,12 @@ snapshots:
       '@tailwindcss/oxide-win32-arm64-msvc': 4.1.11
       '@tailwindcss/oxide-win32-x64-msvc': 4.1.11
 
-  '@tailwindcss/vite@4.1.11(rolldown-vite@7.0.8(@types/node@24.0.13)(jiti@2.4.2))':
+  '@tailwindcss/vite@4.1.11(rolldown-vite@7.0.8(@types/node@24.0.14)(jiti@2.4.2))':
     dependencies:
       '@tailwindcss/node': 4.1.11
       '@tailwindcss/oxide': 4.1.11
       tailwindcss: 4.1.11
-      vite: rolldown-vite@7.0.8(@types/node@24.0.13)(jiti@2.4.2)
+      vite: rolldown-vite@7.0.8(@types/node@24.0.14)(jiti@2.4.2)
 
   '@tanstack/query-core@5.83.0': {}
 
@@ -2818,7 +2818,7 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
-  '@types/node@24.0.13':
+  '@types/node@24.0.14':
     dependencies:
       undici-types: 7.8.0
 
@@ -2923,7 +2923,7 @@ snapshots:
       '@typescript-eslint/types': 8.37.0
       eslint-visitor-keys: 4.2.1
 
-  '@vitejs/plugin-react@4.6.0(rolldown-vite@7.0.8(@types/node@24.0.13)(jiti@2.4.2))':
+  '@vitejs/plugin-react@4.6.0(rolldown-vite@7.0.8(@types/node@24.0.14)(jiti@2.4.2))':
     dependencies:
       '@babel/core': 7.28.0
       '@babel/plugin-transform-react-jsx-self': 7.27.1(@babel/core@7.28.0)
@@ -2931,7 +2931,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-beta.19
       '@types/babel__core': 7.20.5
       react-refresh: 0.17.0
-      vite: rolldown-vite@7.0.8(@types/node@24.0.13)(jiti@2.4.2)
+      vite: rolldown-vite@7.0.8(@types/node@24.0.14)(jiti@2.4.2)
     transitivePeerDependencies:
       - supports-color
 
@@ -4115,7 +4115,7 @@ snapshots:
       - oxc-resolver
       - supports-color
 
-  rolldown-vite@7.0.8(@types/node@24.0.13)(jiti@2.4.2):
+  rolldown-vite@7.0.8(@types/node@24.0.14)(jiti@2.4.2):
     dependencies:
       fdir: 6.4.6(picomatch@4.0.2)
       lightningcss: 1.30.1
@@ -4124,7 +4124,7 @@ snapshots:
       rolldown: 1.0.0-beta.26
       tinyglobby: 0.2.14
     optionalDependencies:
-      '@types/node': 24.0.13
+      '@types/node': 24.0.14
       fsevents: 2.3.3
       jiti: 2.4.2
 
