@@ -6,10 +6,12 @@ export function NextButton() {
   });
 
   const isSomeValidating = Object.values(fields).some(
-    (field) => field.meta.isValidating,
+    (field) => field.validationState.type === "validating",
   );
 
-  const isEveryDone = Object.values(fields).every((field) => field.meta.isDone);
+  const isEveryDone = Object.values(fields).every(
+    (field) => field.validationState.type === "done",
+  );
 
   const isDisabled = isSomeValidating || !isEveryDone;
 

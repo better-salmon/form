@@ -7,18 +7,19 @@ export function Name() {
     validators: {
       onChange: (props) => {
         console.log("onChange name", props);
-        props.fieldApi.setDone(false);
-        props.fieldApi.setIssue();
+        props.fieldApi.setValidationState({
+          type: "pending",
+        });
       },
       onSubmit: (props) => {
         console.log("onSubmit name", props);
-        // props.fieldApi.setIssue("Name is required");
-        // props.fieldApi.setDone(true);
       },
       onSubmitAsync: async (props) => {
-        console.log("onSubmitAsync name", props);
+        console.log("onSubmitAsync async name", props);
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        props.fieldApi.setDone(true);
+        props.fieldApi.setValidationState({
+          type: "done",
+        });
       },
     },
   });
@@ -32,7 +33,7 @@ export function Name() {
           name={field.name}
           value={field.value.firstName}
           onBlur={field.handleBlur}
-          data-done={field.meta.isDone ? "true" : "false"}
+          data-done={field.validationState.type === "done" ? "true" : "false"}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -47,18 +48,20 @@ export function Name() {
             });
           }}
           className={cn("rounded-md border-2 border-gray-300 p-2 pr-10", {
-            "border-red-500": field.meta.issue,
-            "border-green-500": field.meta.isDone,
+            "border-red-500": field.validationState.type === "error",
+            "border-green-500": field.validationState.type === "done",
           })}
         />
         <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-          {field.meta.isValidating && (
+          {field.validationState.type === "validating" && (
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
           )}
-          {field.meta.isDone && !field.meta.isValidating && (
+          {field.validationState.type === "done" && (
             <span className="text-green-500">✅</span>
           )}
-          {field.meta.issue && <span className="text-red-500">❌</span>}
+          {field.validationState.type === "error" && (
+            <span className="text-red-500">❌</span>
+          )}
         </div>
       </div>
     </label>

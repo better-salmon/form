@@ -68,7 +68,7 @@ function App() {
     onDoneChange: ({ fieldsMap, changedFields }) => {
       console.log("onDoneChange", fieldsMap, changedFields);
       for (const [name, field] of Object.entries(fieldsMap)) {
-        if (!field.meta.isDone) {
+        if (field.validationState.type !== "done") {
           focusNextField(name);
           return;
         }
@@ -92,8 +92,9 @@ function App() {
         validators={{
           onChange: (props) => {
             console.log("onChange name", props);
-            props.fieldApi.setDone(false);
-            props.fieldApi.setIssue();
+            props.fieldApi.setValidationState({
+              type: "pending",
+            });
           },
           onSubmit: (props) => {
             console.log("onSubmit name", props);
@@ -103,7 +104,9 @@ function App() {
           onSubmitAsync: async (props) => {
             console.log("onSubmitAsync name", props);
             await new Promise((resolve) => setTimeout(resolve, 1000));
-            props.fieldApi.setDone(true);
+            props.fieldApi.setValidationState({
+              type: "done",
+            });
           },
         }}
         render={(field) => (
@@ -115,7 +118,9 @@ function App() {
                 name={field.name}
                 value={field.value.firstName}
                 onBlur={field.handleBlur}
-                data-done={field.meta.isDone ? "true" : "false"}
+                data-done={
+                  field.validationState.type === "done" ? "true" : "false"
+                }
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -130,18 +135,20 @@ function App() {
                   });
                 }}
                 className={cn("rounded-md border-2 border-gray-300 p-2 pr-10", {
-                  "border-red-500": field.meta.issue,
-                  "border-green-500": field.meta.isDone,
+                  "border-red-500": field.validationState.type === "error",
+                  "border-green-500": field.validationState.type === "done",
                 })}
               />
               <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                {field.meta.isValidating && (
+                {field.validationState.type === "validating" && (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
                 )}
-                {field.meta.isDone && !field.meta.isValidating && (
+                {field.validationState.type === "done" && (
                   <span className="text-green-500">✅</span>
                 )}
-                {field.meta.issue && <span className="text-red-500">❌</span>}
+                {field.validationState.type === "error" && (
+                  <span className="text-red-500">❌</span>
+                )}
               </div>
             </div>
           </label>
@@ -154,15 +161,21 @@ function App() {
             console.log("onSubmit email", props);
 
             if (props.value.length === 0) {
-              props.fieldApi.setIssue("Email is required");
+              props.fieldApi.setValidationState({
+                type: "error",
+                message: "Email is required",
+              });
             } else {
-              props.fieldApi.setDone(true);
+              props.fieldApi.setValidationState({
+                type: "done",
+              });
             }
           },
           onChange: (props) => {
             console.log("onChange email", props);
-            props.fieldApi.setDone(false);
-            props.fieldApi.setIssue();
+            props.fieldApi.setValidationState({
+              type: "pending",
+            });
           },
         }}
         render={(field) => (
@@ -172,7 +185,9 @@ function App() {
               <input
                 type="email"
                 name={field.name}
-                data-done={field.meta.isDone ? "true" : "false"}
+                data-done={
+                  field.validationState.type === "done" ? "true" : "false"
+                }
                 value={field.value}
                 onChange={(e) => {
                   field.handleChange(e.target.value);
@@ -185,18 +200,20 @@ function App() {
                   }
                 }}
                 className={cn("rounded-md border-2 border-gray-300 p-2 pr-10", {
-                  "border-red-500": field.meta.issue,
-                  "border-green-500": field.meta.isDone,
+                  "border-red-500": field.validationState.type === "error",
+                  "border-green-500": field.validationState.type === "done",
                 })}
               />
               <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                {field.meta.isValidating && (
+                {field.validationState.type === "validating" && (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
                 )}
-                {field.meta.isDone && !field.meta.isValidating && (
+                {field.validationState.type === "done" && (
                   <span className="text-green-500">✅</span>
                 )}
-                {field.meta.issue && <span className="text-red-500">❌</span>}
+                {field.validationState.type === "error" && (
+                  <span className="text-red-500">❌</span>
+                )}
               </div>
             </div>
           </label>
@@ -207,11 +224,15 @@ function App() {
         validators={{
           onSubmit: (props) => {
             console.log("onSubmit phone", props);
-            props.fieldApi.setDone(true);
+            props.fieldApi.setValidationState({
+              type: "done",
+            });
           },
           onMount: (props) => {
             console.log("onMount phone", props);
-            props.fieldApi.setDone(props.value !== undefined);
+            props.fieldApi.setValidationState({
+              type: props.value === undefined ? "pending" : "done",
+            });
           },
         }}
         render={(field) => (
@@ -224,7 +245,9 @@ function App() {
                 name={field.name}
                 value={field.value ?? ""}
                 disabled={field.value === undefined}
-                data-done={field.meta.isDone ? "true" : "false"}
+                data-done={
+                  field.validationState.type === "done" ? "true" : "false"
+                }
                 onChange={(e) => {
                   field.handleChange(e.target.value);
                 }}
@@ -238,20 +261,22 @@ function App() {
                 className={cn(
                   "rounded-md border-2 border-gray-300 p-2 pr-10 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500",
                   {
-                    "border-red-500": field.meta.issue,
-                    "border-green-500": field.meta.isDone,
+                    "border-red-500": field.validationState.type === "error",
+                    "border-green-500": field.validationState.type === "done",
                   },
                 )}
               />
               <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                {field.meta.isValidating ||
+                {field.validationState.type === "validating" ||
                   (field.value === undefined && (
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
                   ))}
-                {field.meta.isDone && !field.meta.isValidating && (
+                {field.validationState.type === "done" && (
                   <span className="text-green-500">✅</span>
                 )}
-                {field.meta.issue && <span className="text-red-500">❌</span>}
+                {field.validationState.type === "error" && (
+                  <span className="text-red-500">❌</span>
+                )}
               </div>
             </div>
           </label>
@@ -261,11 +286,11 @@ function App() {
         dependencies={["email", "phone", "name"]}
         render={(fieldsMap) => {
           const isSomeValidating = Object.values(fieldsMap).some(
-            (field) => field.meta.isValidating,
+            (field) => field.validationState.type === "validating",
           );
 
           const isEveryDone = Object.values(fieldsMap).every(
-            (field) => field.meta.isDone,
+            (field) => field.validationState.type === "done",
           );
 
           const isDisabled = isSomeValidating || !isEveryDone;

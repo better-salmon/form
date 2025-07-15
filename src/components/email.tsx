@@ -9,15 +9,21 @@ export function Email() {
         console.log("onSubmit email", props);
 
         if (props.value.length === 0) {
-          props.fieldApi.setIssue("Email is required");
+          props.fieldApi.setValidationState({
+            type: "error",
+            message: "Email is required",
+          });
         } else {
-          props.fieldApi.setDone(true);
+          props.fieldApi.setValidationState({
+            type: "done",
+          });
         }
       },
       onChange: (props) => {
         console.log("onChange email", props);
-        props.fieldApi.setDone(false);
-        props.fieldApi.setIssue();
+        props.fieldApi.setValidationState({
+          type: "pending",
+        });
       },
     },
   });
@@ -29,7 +35,7 @@ export function Email() {
         <input
           type="email"
           name={field.name}
-          data-done={field.meta.isDone ? "true" : "false"}
+          data-done={field.validationState.type === "done" ? "true" : "false"}
           value={field.value}
           onChange={(e) => {
             field.handleChange(e.target.value);
@@ -42,18 +48,20 @@ export function Email() {
             }
           }}
           className={cn("rounded-md border-2 border-gray-300 p-2 pr-10", {
-            "border-red-500": field.meta.issue,
-            "border-green-500": field.meta.isDone,
+            "border-red-500": field.validationState.type === "error",
+            "border-green-500": field.validationState.type === "done",
           })}
         />
         <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-          {field.meta.isValidating && (
+          {field.validationState.type === "validating" && (
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
           )}
-          {field.meta.isDone && !field.meta.isValidating && (
+          {field.validationState.type === "done" && (
             <span className="text-green-500">✅</span>
           )}
-          {field.meta.issue && <span className="text-red-500">❌</span>}
+          {field.validationState.type === "error" && (
+            <span className="text-red-500">❌</span>
+          )}
         </div>
       </div>
     </label>

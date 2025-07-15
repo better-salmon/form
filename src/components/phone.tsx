@@ -7,11 +7,15 @@ export function Phone() {
     validators: {
       onSubmit: (props) => {
         console.log("onSubmit phone", props);
-        props.fieldApi.setDone(true);
+        props.fieldApi.setValidationState({
+          type: "done",
+        });
       },
       onMount: (props) => {
         console.log("onMount phone", props);
-        props.fieldApi.setDone(props.value !== undefined);
+        props.fieldApi.setValidationState({
+          type: props.value === undefined ? "pending" : "done",
+        });
       },
     },
   });
@@ -26,7 +30,7 @@ export function Phone() {
           name={field.name}
           value={field.value ?? ""}
           disabled={field.value === undefined}
-          data-done={field.meta.isDone ? "true" : "false"}
+          data-done={field.validationState.type === "done" ? "true" : "false"}
           onChange={(e) => {
             field.handleChange(e.target.value);
           }}
@@ -40,20 +44,22 @@ export function Phone() {
           className={cn(
             "rounded-md border-2 border-gray-300 p-2 pr-10 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500",
             {
-              "border-red-500": field.meta.issue,
-              "border-green-500": field.meta.isDone,
+              "border-red-500": field.validationState.type === "error",
+              "border-green-500": field.validationState.type === "done",
             },
           )}
         />
         <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-          {field.meta.isValidating ||
+          {field.validationState.type === "validating" ||
             (field.value === undefined && (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
             ))}
-          {field.meta.isDone && !field.meta.isValidating && (
+          {field.validationState.type === "done" && (
             <span className="text-green-500">✅</span>
           )}
-          {field.meta.issue && <span className="text-red-500">❌</span>}
+          {field.validationState.type === "error" && (
+            <span className="text-red-500">❌</span>
+          )}
         </div>
       </div>
     </label>

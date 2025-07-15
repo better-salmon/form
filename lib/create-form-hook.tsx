@@ -45,8 +45,7 @@ export type Validator<
   value: T[K];
   fieldApi: {
     meta: Field<T[K]>["meta"];
-    setIssue: (issue?: string) => void;
-    setDone: (isDone: boolean) => void;
+    setValidationState: (validationState: ValidationState) => void;
     formApi: {
       dependencies: DependencyFields<T, D>;
     };
@@ -61,8 +60,7 @@ export type AsyncValidator<
   value: T[K];
   fieldApi: {
     meta: Field<T[K]>["meta"];
-    setIssue: (issue?: string) => void;
-    setDone: (isDone: boolean) => void;
+    setValidationState: (validationState: ValidationState) => void;
     formApi: {
       dependencies: DependencyFields<T, D>;
     };
@@ -81,16 +79,29 @@ export interface FieldValidators<
   readonly onSubmitAsync?: AsyncValidator<T, K, D>;
 }
 
+export type ValidationState =
+  | {
+      type: "error";
+      message: string;
+    }
+  | {
+      type: "done";
+    }
+  | {
+      type: "pending";
+    }
+  | {
+      type: "validating";
+    };
+
 export interface Field<T = unknown> {
   value: T;
   meta: {
     isTouched: boolean;
     numberOfChanges: number;
     numberOfSubmissions: number;
-    isDone: boolean;
-    issue?: string;
-    isValidating: boolean;
   };
+  validationState: ValidationState;
 }
 
 export interface FormApi<T extends DefaultValues, D extends keyof T = never> {
@@ -108,10 +119,10 @@ export interface FieldApi<
   handleChange: (value: T[K]) => void;
   handleSubmit: () => Promise<void>;
   handleBlur: () => void;
-  setIssue: (issue: string | undefined) => void;
-  setDone: (isDone: boolean) => void;
+  setValidationState: (validationState: ValidationState) => void;
   meta: Field<T[K]>["meta"];
   formApi: Prettify<FormApi<T, D>>;
+  validationState: ValidationState;
 }
 
 export interface Store<T extends DefaultValues> {
@@ -124,9 +135,10 @@ export interface Store<T extends DefaultValues> {
 export interface Actions<T extends DefaultValues> {
   setValue: <K extends keyof T>(field: K, value: T[K]) => void;
   submit: (fields?: readonly (keyof T)[]) => Promise<void>;
-  setIssue: (field: keyof T, issue?: string) => void;
-  setDone: (field: keyof T, isDone: boolean) => void;
-  setValidating: (field: keyof T, isValidating: boolean) => void;
+  setValidationState: (
+    field: keyof T,
+    validationState: ValidationState,
+  ) => void;
   setValidators: <K extends keyof T, D extends Exclude<keyof T, K> = never>(
     field: K,
     validators?: FieldValidators<T, K, D>,
@@ -190,10 +202,11 @@ function createInitialFieldsMap<T extends DefaultValues>(
           isTouched: false,
           numberOfChanges: 0,
           numberOfSubmissions: 0,
-          isDone: false,
-          isValidating: false,
         },
-      },
+        validationState: {
+          type: "pending",
+        },
+      } satisfies Field<T[typeof field]>,
     ]),
   ) as FieldsMap<T>;
 }
@@ -245,7 +258,7 @@ function createFormStoreMutative<T extends DefaultValues>(
         const snapshot = get();
 
         // Don't run validation if field is already validating
-        if (snapshot.fieldsMap[field].meta.isValidating) {
+        if (snapshot.fieldsMap[field].validationState.type === "validating") {
           return;
         }
 
@@ -259,11 +272,8 @@ function createFormStoreMutative<T extends DefaultValues>(
           value: value,
           fieldApi: {
             meta: snapshot.fieldsMap[field].meta,
-            setIssue: (issue?: string) => {
-              snapshot.setIssue(field, issue);
-            },
-            setDone: (isDone: boolean) => {
-              snapshot.setDone(field, isDone);
+            setValidationState: (validationState: ValidationState) => {
+              snapshot.setValidationState(field, validationState);
             },
             formApi: {
               dependencies: dependenciesData,
@@ -275,23 +285,28 @@ function createFormStoreMutative<T extends DefaultValues>(
         const snapshot = get();
         const fieldsToSubmit = fields ?? getFieldNames(snapshot.fieldsMap);
 
-        const fieldsValidationState = new Map<
+        const syncSubmissionValidationResults = new Map<
           keyof T,
-          {
-            issue?: string;
-            isDone: boolean;
-          }
+          ValidationState
         >();
 
         // Handle synchronous validators first
         for (const fieldName of fieldsToSubmit) {
-          set((state) => {
-            (state.fieldsMap as FieldsMap<T>)[fieldName].meta
-              .numberOfSubmissions++;
-          });
+          const validationStateType =
+            snapshot.fieldsMap[fieldName].validationState.type;
 
-          // Don't run validation if field is already validating
-          if (snapshot.fieldsMap[fieldName].meta.isValidating) {
+          if (validationStateType !== "validating") {
+            set((state) => {
+              (state.fieldsMap as FieldsMap<T>)[fieldName].meta
+                .numberOfSubmissions++;
+            });
+          }
+
+          // Don't run validation if field is already validating or success
+          if (
+            validationStateType === "validating" ||
+            validationStateType === "done"
+          ) {
             continue;
           }
 
@@ -305,19 +320,9 @@ function createFormStoreMutative<T extends DefaultValues>(
             value: snapshot.fieldsMap[fieldName].value,
             fieldApi: {
               meta: snapshot.fieldsMap[fieldName].meta,
-              setIssue: (issue?: string) => {
-                fieldsValidationState.set(fieldName, {
-                  issue,
-                  isDone: snapshot.fieldsMap[fieldName].meta.isDone,
-                });
-                snapshot.setIssue(fieldName, issue);
-              },
-              setDone: (isDone: boolean) => {
-                fieldsValidationState.set(fieldName, {
-                  issue: fieldsValidationState.get(fieldName)?.issue,
-                  isDone,
-                });
-                snapshot.setDone(fieldName, isDone);
+              setValidationState: (validationState: ValidationState) => {
+                snapshot.setValidationState(fieldName, validationState);
+                syncSubmissionValidationResults.set(fieldName, validationState);
               },
               formApi: {
                 dependencies: dependenciesData,
@@ -335,14 +340,23 @@ function createFormStoreMutative<T extends DefaultValues>(
               return null;
             }
 
-            const fieldWithErrors = fieldsValidationState.get(fieldName);
+            const syncSubmissionValidationResultType =
+              syncSubmissionValidationResults.get(fieldName)?.type;
 
-            if (fieldWithErrors?.issue || fieldWithErrors?.isDone) {
+            if (
+              syncSubmissionValidationResultType === "error" ||
+              syncSubmissionValidationResultType === "done"
+            ) {
               return null;
             }
 
-            // Don't run async validation if field is already validating
-            if (snapshot.fieldsMap[fieldName].meta.isValidating) {
+            const fieldValidationStateType =
+              snapshot.fieldsMap[fieldName].validationState.type;
+
+            if (
+              fieldValidationStateType === "validating" ||
+              fieldValidationStateType === "done"
+            ) {
               return null;
             }
 
@@ -356,27 +370,31 @@ function createFormStoreMutative<T extends DefaultValues>(
               >(currentSnapshot.fieldsMap, dependencies);
 
               // Set validating state
-              currentSnapshot.setValidating(fieldName, true);
+              currentSnapshot.setValidationState(fieldName, {
+                type: "validating",
+              });
 
               try {
                 await validator({
                   value: currentSnapshot.fieldsMap[fieldName].value,
                   fieldApi: {
                     meta: currentSnapshot.fieldsMap[fieldName].meta,
-                    setIssue: (issue?: string) => {
-                      currentSnapshot.setIssue(fieldName, issue);
-                    },
-                    setDone: (isDone: boolean) => {
-                      currentSnapshot.setDone(fieldName, isDone);
+                    setValidationState: (validationState: ValidationState) => {
+                      currentSnapshot.setValidationState(
+                        fieldName,
+                        validationState,
+                      );
                     },
                     formApi: {
                       dependencies: dependenciesData,
                     },
                   },
                 });
-              } finally {
-                // Clear validating state
-                get().setValidating(fieldName, false);
+              } catch {
+                currentSnapshot.setValidationState(fieldName, {
+                  type: "error",
+                  message: "Async validation failed",
+                });
               }
             };
           })
@@ -387,40 +405,6 @@ function createFormStoreMutative<T extends DefaultValues>(
           await Promise.allSettled(
             asyncValidations.map((validation) => validation()),
           );
-        }
-      },
-      setIssue: (field: keyof T, issue?: string) => {
-        set((state) => {
-          const fieldsMap = state.fieldsMap as FieldsMap<T>;
-          fieldsMap[field].meta.issue = issue;
-
-          if (issue) {
-            fieldsMap[field].meta.isDone = false;
-          }
-        });
-      },
-      setValidating: (field: keyof T, isValidating: boolean) => {
-        set((state) => {
-          const fieldsMap = state.fieldsMap as FieldsMap<T>;
-          fieldsMap[field].meta.isValidating = isValidating;
-        });
-      },
-      setDone: (field: keyof T, isDone: boolean) => {
-        const prevIsDone = get().fieldsMap[field].meta.isDone;
-
-        set((state) => {
-          const fieldsMap = state.fieldsMap as FieldsMap<T>;
-          fieldsMap[field].meta.isDone = isDone;
-          fieldsMap[field].meta.isTouched = true;
-          fieldsMap[field].meta.issue = undefined;
-        });
-
-        if (prevIsDone !== isDone && options.onDoneChange) {
-          const snapshot = get();
-          options.onDoneChange({
-            fieldsMap: snapshot.fieldsMap,
-            changedFields: [field],
-          });
         }
       },
       setDependencies: <K extends keyof T>(
@@ -441,6 +425,32 @@ function createFormStoreMutative<T extends DefaultValues>(
               defaultValues[field as keyof T];
           }
         });
+      },
+      setValidationState: (
+        field: keyof T,
+        validationState: ValidationState,
+      ) => {
+        const snapshot = get();
+
+        const previousValidationStateType =
+          snapshot.fieldsMap[field].validationState.type;
+
+        set((state) => {
+          const fieldsMap = state.fieldsMap as FieldsMap<T>;
+          fieldsMap[field].validationState = validationState;
+        });
+
+        if (
+          (previousValidationStateType === "done" &&
+            validationState.type !== "done") ||
+          (previousValidationStateType !== "done" &&
+            validationState.type === "done")
+        ) {
+          options.onDoneChange?.({
+            fieldsMap: snapshot.fieldsMap,
+            changedFields: [field],
+          });
+        }
       },
     })),
   );
@@ -544,8 +554,10 @@ function useField<
   );
   const setValue = useStore(formStore, (state) => state.setValue);
   const submit = useStore(formStore, (state) => state.submit);
-  const setIssueToStore = useStore(formStore, (state) => state.setIssue);
-  const setDoneToStore = useStore(formStore, (state) => state.setDone);
+  const setValidationState = useStore(
+    formStore,
+    (state) => state.setValidationState,
+  );
 
   useIsomorphicEffect(() => {
     if (
@@ -582,23 +594,16 @@ function useField<
     dependencies,
   };
 
-  const setIssue = useCallback(
-    (issue?: string) => {
-      setIssueToStore(options.name, issue);
+  const setValidationStateToStore = useCallback(
+    (validationState: ValidationState) => {
+      setValidationState(options.name, validationState);
     },
-    [options.name, setIssueToStore],
-  );
-
-  const setDone = useCallback(
-    (isDone: boolean) => {
-      setDoneToStore(options.name, isDone);
-    },
-    [options.name, setDoneToStore],
+    [options.name, setValidationState],
   );
 
   const handleBlur = () => {
     // Don't run validation if field is already validating
-    if (field.meta.isValidating) {
+    if (field.validationState.type === "validating") {
       return;
     }
 
@@ -606,8 +611,7 @@ function useField<
       value: field.value,
       fieldApi: {
         meta: field.meta,
-        setIssue,
-        setDone,
+        setValidationState: setValidationStateToStore,
         formApi: {
           dependencies,
         },
@@ -617,7 +621,7 @@ function useField<
 
   useIsomorphicEffect(() => {
     // Don't run validation if field is already validating
-    if (field.meta.isValidating) {
+    if (field.validationState.type === "validating") {
       return;
     }
 
@@ -625,8 +629,7 @@ function useField<
       value: field.value,
       fieldApi: {
         meta: field.meta,
-        setIssue,
-        setDone,
+        setValidationState: setValidationStateToStore,
         formApi: {
           dependencies,
         },
@@ -635,21 +638,21 @@ function useField<
   }, [
     dependencies,
     field.meta,
+    field.validationState.type,
     field.value,
     options.validators,
-    setDone,
-    setIssue,
+    setValidationStateToStore,
   ]);
 
   return {
     name: options.name,
     value: field.value,
     meta: field.meta,
+    validationState: field.validationState,
     handleChange,
     handleSubmit,
     handleBlur,
-    setIssue,
-    setDone,
+    setValidationState: setValidationStateToStore,
     formApi,
   };
 }
