@@ -71,7 +71,7 @@ function App() {
     onDoneChange: ({ fieldsMap, changedFields }) => {
       console.log("onDoneChange", fieldsMap, changedFields);
       for (const [name, field] of Object.entries(fieldsMap)) {
-        if (!field.meta.isDone) {
+        if (field.validationState.type !== "done") {
           focusNextField(name);
           return;
         }

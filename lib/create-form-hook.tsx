@@ -45,27 +45,11 @@ export type Validator<
   value: T[K];
   fieldApi: {
     meta: Field<T[K]>["meta"];
-    setValidationState: (validationState: ValidationState) => void;
     formApi: {
       dependencies: DependencyFields<T, D>;
     };
   };
-}) => void;
-
-export type AsyncValidator<
-  T extends DefaultValues,
-  K extends keyof T,
-  D extends Exclude<keyof T, K> = never,
-> = (props: {
-  value: T[K];
-  fieldApi: {
-    meta: Field<T[K]>["meta"];
-    setValidationState: (validationState: ValidationState) => void;
-    formApi: {
-      dependencies: DependencyFields<T, D>;
-    };
-  };
-}) => Promise<void>;
+}) => AllowedValidationResult | Promise<AllowedValidationResult>;
 
 export interface FieldValidators<
   T extends DefaultValues,
@@ -76,23 +60,35 @@ export interface FieldValidators<
   readonly onSubmit?: Validator<T, K, D>;
   readonly onChange?: Validator<T, K, D>;
   readonly onMount?: Validator<T, K, D>;
-  readonly onSubmitAsync?: AsyncValidator<T, K, D>;
 }
 
-export type ValidationState =
-  | {
-      type: "error";
-      message: string;
-    }
-  | {
-      type: "done";
-    }
-  | {
-      type: "pending";
-    }
-  | {
-      type: "validating";
-    };
+export interface ErrorValidationResult {
+  type: "error";
+  message: string;
+}
+
+export interface DoneValidationResult {
+  type: "done";
+}
+
+export interface PendingValidationResult {
+  type: "pending";
+}
+
+export interface ValidatingValidationResult {
+  type: "validating";
+}
+
+export type ValidationResult =
+  | ErrorValidationResult
+  | DoneValidationResult
+  | PendingValidationResult
+  | ValidatingValidationResult;
+
+export type AllowedValidationResult = Exclude<
+  ValidationResult,
+  ValidatingValidationResult
+>;
 
 export interface Field<T = unknown> {
   value: T;
@@ -101,11 +97,11 @@ export interface Field<T = unknown> {
     numberOfChanges: number;
     numberOfSubmissions: number;
   };
-  validationState: ValidationState;
+  validationState: ValidationResult;
 }
 
 export interface FormApi<T extends DefaultValues, D extends keyof T = never> {
-  submit: (fields?: readonly (keyof T)[]) => Promise<void>;
+  submit: (fields?: readonly (keyof T)[]) => void;
   dependencies: DependencyFields<T, D>;
 }
 
@@ -117,12 +113,12 @@ export interface FieldApi<
   name: K;
   value: T[K];
   handleChange: (value: T[K]) => void;
-  handleSubmit: () => Promise<void>;
+  handleSubmit: () => void;
   handleBlur: () => void;
-  setValidationState: (validationState: ValidationState) => void;
+  setValidationState: (validationState: ValidationResult) => void;
   meta: Field<T[K]>["meta"];
   formApi: Prettify<FormApi<T, D>>;
-  validationState: ValidationState;
+  validationState: ValidationResult;
 }
 
 export interface Store<T extends DefaultValues> {
@@ -134,10 +130,10 @@ export interface Store<T extends DefaultValues> {
 
 export interface Actions<T extends DefaultValues> {
   setValue: <K extends keyof T>(field: K, value: T[K]) => void;
-  submit: (fields?: readonly (keyof T)[]) => Promise<void>;
+  submit: (fields?: readonly (keyof T)[]) => void;
   setValidationState: (
     field: keyof T,
-    validationState: ValidationState,
+    validationState: ValidationResult,
   ) => void;
   setValidators: <K extends keyof T, D extends Exclude<keyof T, K> = never>(
     field: K,
@@ -268,143 +264,87 @@ function createFormStoreMutative<T extends DefaultValues>(
           dependencies,
         );
 
-        snapshot.validatorsMap[field]?.onChange?.({
+        const validationStateOrPromise = snapshot.validatorsMap[
+          field
+        ]?.onChange?.({
           value: value,
           fieldApi: {
             meta: snapshot.fieldsMap[field].meta,
-            setValidationState: (validationState: ValidationState) => {
-              snapshot.setValidationState(field, validationState);
-            },
             formApi: {
               dependencies: dependenciesData,
             },
           },
         });
+
+        if (!validationStateOrPromise) {
+          return;
+        }
+
+        if (validationStateOrPromise instanceof Promise) {
+          snapshot.setValidationState(field, {
+            type: "validating",
+          });
+
+          validationStateOrPromise
+            .then((validationState) => {
+              snapshot.setValidationState(field, validationState);
+            })
+            .catch(() => {
+              snapshot.setValidationState(field, {
+                type: "error",
+                message: "Async validation failed",
+              });
+            });
+
+          return;
+        }
+
+        snapshot.setValidationState(field, validationStateOrPromise);
       },
-      submit: async (fields?: readonly (keyof T)[]) => {
+      submit: (fields?: readonly (keyof T)[]) => {
         const snapshot = get();
         const fieldsToSubmit = fields ?? getFieldNames(snapshot.fieldsMap);
 
-        const syncSubmissionValidationResults = new Map<
-          keyof T,
-          ValidationState
-        >();
-
-        // Handle synchronous validators first
-        for (const fieldName of fieldsToSubmit) {
-          const validationStateType =
-            snapshot.fieldsMap[fieldName].validationState.type;
-
-          if (validationStateType !== "validating") {
-            set((state) => {
-              (state.fieldsMap as FieldsMap<T>)[fieldName].meta
-                .numberOfSubmissions++;
-            });
-          }
-
-          // Don't run validation if field is already validating or success
-          if (
-            validationStateType === "validating" ||
-            validationStateType === "done"
-          ) {
-            continue;
-          }
-
-          const dependencies = snapshot.dependenciesMap[fieldName] || [];
-          const dependenciesData = createDependencyFields<T, typeof fieldName>(
-            snapshot.fieldsMap,
-            dependencies,
-          );
-
-          snapshot.validatorsMap[fieldName]?.onSubmit?.({
-            value: snapshot.fieldsMap[fieldName].value,
+        for (const field of fieldsToSubmit) {
+          const validationStateOrPromise = snapshot.validatorsMap[
+            field
+          ]?.onSubmit?.({
+            value: snapshot.fieldsMap[field].value,
             fieldApi: {
-              meta: snapshot.fieldsMap[fieldName].meta,
-              setValidationState: (validationState: ValidationState) => {
-                snapshot.setValidationState(fieldName, validationState);
-                syncSubmissionValidationResults.set(fieldName, validationState);
-              },
+              meta: snapshot.fieldsMap[field].meta,
               formApi: {
-                dependencies: dependenciesData,
+                dependencies: createDependencyFields(
+                  snapshot.fieldsMap,
+                  snapshot.dependenciesMap[field] ?? [],
+                ),
               },
             },
           });
-        }
 
-        // Handle asynchronous validators
-        const asyncValidations = fieldsToSubmit
-          .map((fieldName) => {
-            const validator = snapshot.validatorsMap[fieldName]?.onSubmitAsync;
+          if (!validationStateOrPromise) {
+            continue;
+          }
 
-            if (!validator) {
-              return null;
-            }
+          if (validationStateOrPromise instanceof Promise) {
+            snapshot.setValidationState(field, {
+              type: "validating",
+            });
 
-            const syncSubmissionValidationResultType =
-              syncSubmissionValidationResults.get(fieldName)?.type;
-
-            if (
-              syncSubmissionValidationResultType === "error" ||
-              syncSubmissionValidationResultType === "done"
-            ) {
-              return null;
-            }
-
-            const fieldValidationStateType =
-              snapshot.fieldsMap[fieldName].validationState.type;
-
-            if (
-              fieldValidationStateType === "validating" ||
-              fieldValidationStateType === "done"
-            ) {
-              return null;
-            }
-
-            return async () => {
-              const currentSnapshot = get();
-              const dependencies =
-                currentSnapshot.dependenciesMap[fieldName] || [];
-              const dependenciesData = createDependencyFields<
-                T,
-                typeof fieldName
-              >(currentSnapshot.fieldsMap, dependencies);
-
-              // Set validating state
-              currentSnapshot.setValidationState(fieldName, {
-                type: "validating",
-              });
-
-              try {
-                await validator({
-                  value: currentSnapshot.fieldsMap[fieldName].value,
-                  fieldApi: {
-                    meta: currentSnapshot.fieldsMap[fieldName].meta,
-                    setValidationState: (validationState: ValidationState) => {
-                      currentSnapshot.setValidationState(
-                        fieldName,
-                        validationState,
-                      );
-                    },
-                    formApi: {
-                      dependencies: dependenciesData,
-                    },
-                  },
-                });
-              } catch {
-                currentSnapshot.setValidationState(fieldName, {
+            validationStateOrPromise
+              .then((validationState) => {
+                snapshot.setValidationState(field, validationState);
+              })
+              .catch(() => {
+                snapshot.setValidationState(field, {
                   type: "error",
                   message: "Async validation failed",
                 });
-              }
-            };
-          })
-          .filter((validation) => validation !== null);
+              });
 
-        // Execute async validations in parallel
-        if (asyncValidations.length > 0) {
-          await Promise.allSettled(
-            asyncValidations.map((validation) => validation()),
-          );
+            return;
+          }
+
+          snapshot.setValidationState(field, validationStateOrPromise);
         }
       },
       setDependencies: <K extends keyof T>(
@@ -428,7 +368,7 @@ function createFormStoreMutative<T extends DefaultValues>(
       },
       setValidationState: (
         field: keyof T,
-        validationState: ValidationState,
+        validationState: ValidationResult,
       ) => {
         const snapshot = get();
 
@@ -583,19 +523,19 @@ function useField<
     setValue(options.name, value);
   };
 
-  const handleSubmit = async () => {
-    await submit([options.name]);
+  const handleSubmit = () => {
+    submit([options.name]);
   };
 
   const formApi: FormApi<T, D> = {
-    submit: async (fields?: readonly (keyof T)[]) => {
-      await submit(fields);
+    submit: (fields?: readonly (keyof T)[]) => {
+      submit(fields);
     },
     dependencies,
   };
 
   const setValidationStateToStore = useCallback(
-    (validationState: ValidationState) => {
+    (validationState: ValidationResult) => {
       setValidationState(options.name, validationState);
     },
     [options.name, setValidationState],
@@ -607,34 +547,77 @@ function useField<
       return;
     }
 
-    options.validators?.onBlur?.({
+    const validationStateOrPromise = options.validators?.onBlur?.({
       value: field.value,
       fieldApi: {
         meta: field.meta,
-        setValidationState: setValidationStateToStore,
         formApi: {
           dependencies,
         },
       },
     });
+
+    if (!validationStateOrPromise) {
+      return;
+    }
+
+    if (validationStateOrPromise instanceof Promise) {
+      setValidationStateToStore({
+        type: "validating",
+      });
+
+      validationStateOrPromise.then(setValidationStateToStore).catch(() => {
+        setValidationStateToStore({
+          type: "error",
+          message: "Async validation failed",
+        });
+      });
+
+      return;
+    }
+
+    setValidationStateToStore(validationStateOrPromise);
   };
 
   useIsomorphicEffect(() => {
     // Don't run validation if field is already validating
-    if (field.validationState.type === "validating") {
+    if (
+      field.validationState.type === "validating" ||
+      field.value === undefined
+    ) {
       return;
     }
 
-    options.validators?.onMount?.({
+    const validationStateOrPromise = options.validators?.onMount?.({
       value: field.value,
       fieldApi: {
         meta: field.meta,
-        setValidationState: setValidationStateToStore,
         formApi: {
           dependencies,
         },
       },
     });
+
+    if (!validationStateOrPromise) {
+      return;
+    }
+
+    if (validationStateOrPromise instanceof Promise) {
+      setValidationStateToStore({
+        type: "validating",
+      });
+
+      validationStateOrPromise.then(setValidationStateToStore).catch(() => {
+        setValidationStateToStore({
+          type: "error",
+          message: "Async validation failed",
+        });
+      });
+
+      return;
+    }
+
+    setValidationStateToStore(validationStateOrPromise);
   }, [
     dependencies,
     field.meta,

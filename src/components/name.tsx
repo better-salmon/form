@@ -1,25 +1,39 @@
 import { useField } from "@/hooks/my-form";
 import { cn } from "@/utils/cn";
+import type { AllowedValidationResult } from "@lib/create-form-hook";
 
 export function Name() {
   const field = useField({
     name: "name",
     validators: {
       onChange: (props) => {
-        console.log("onChange name", props);
-        props.fieldApi.setValidationState({
-          type: "pending",
-        });
+        console.log("onChange validator name", props);
+
+        if (props.value.firstName.length <= 3) {
+          return {
+            type: "error",
+            message: "Name must be at least 3 characters long",
+          };
+        }
+
+        async function asyncValidation(
+          asyncProps: typeof props,
+        ): Promise<AllowedValidationResult> {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          console.log("asyncValidation props:", asyncProps);
+
+          return {
+            type: "done",
+          };
+        }
+
+        return asyncValidation(props);
       },
       onSubmit: (props) => {
         console.log("onSubmit name", props);
-      },
-      onSubmitAsync: async (props) => {
-        console.log("onSubmitAsync async name", props);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        props.fieldApi.setValidationState({
+        return {
           type: "done",
-        });
+        };
       },
     },
   });
@@ -38,7 +52,7 @@ export function Name() {
             if (e.key === "Enter") {
               e.preventDefault();
               e.stopPropagation();
-              void field.handleSubmit();
+              field.handleSubmit();
             }
           }}
           onChange={(e) => {

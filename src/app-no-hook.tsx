@@ -92,21 +92,18 @@ function App() {
         validators={{
           onChange: (props) => {
             console.log("onChange name", props);
-            props.fieldApi.setValidationState({
+            return {
               type: "pending",
-            });
+            };
           },
           onSubmit: (props) => {
             console.log("onSubmit name", props);
             // props.fieldApi.setIssue("Name is required");
             // props.fieldApi.setDone(true);
-          },
-          onSubmitAsync: async (props) => {
-            console.log("onSubmitAsync name", props);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            props.fieldApi.setValidationState({
+
+            return {
               type: "done",
-            });
+            };
           },
         }}
         render={(field) => (
@@ -125,7 +122,7 @@ function App() {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     e.stopPropagation();
-                    void field.handleSubmit();
+                    field.handleSubmit();
                   }
                 }}
                 onChange={(e) => {
@@ -160,22 +157,20 @@ function App() {
           onSubmit: (props) => {
             console.log("onSubmit email", props);
 
-            if (props.value.length === 0) {
-              props.fieldApi.setValidationState({
-                type: "error",
-                message: "Email is required",
-              });
-            } else {
-              props.fieldApi.setValidationState({
-                type: "done",
-              });
-            }
+            return props.value.length === 0
+              ? {
+                  type: "error",
+                  message: "Email is required",
+                }
+              : {
+                  type: "done",
+                };
           },
           onChange: (props) => {
             console.log("onChange email", props);
-            props.fieldApi.setValidationState({
+            return {
               type: "pending",
-            });
+            };
           },
         }}
         render={(field) => (
@@ -196,7 +191,7 @@ function App() {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     e.stopPropagation();
-                    void field.handleSubmit();
+                    field.handleSubmit();
                   }
                 }}
                 className={cn("rounded-md border-2 border-gray-300 p-2 pr-10", {
@@ -224,15 +219,15 @@ function App() {
         validators={{
           onSubmit: (props) => {
             console.log("onSubmit phone", props);
-            props.fieldApi.setValidationState({
+            return {
               type: "done",
-            });
+            };
           },
           onMount: (props) => {
             console.log("onMount phone", props);
-            props.fieldApi.setValidationState({
-              type: props.value === undefined ? "pending" : "done",
-            });
+            return {
+              type: "done",
+            };
           },
         }}
         render={(field) => (
@@ -255,7 +250,7 @@ function App() {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     e.stopPropagation();
-                    void field.handleSubmit();
+                    field.handleSubmit();
                   }
                 }}
                 className={cn(

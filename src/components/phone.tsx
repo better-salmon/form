@@ -7,15 +7,15 @@ export function Phone() {
     validators: {
       onSubmit: (props) => {
         console.log("onSubmit phone", props);
-        props.fieldApi.setValidationState({
+        return {
           type: "done",
-        });
+        };
       },
       onMount: (props) => {
         console.log("onMount phone", props);
-        props.fieldApi.setValidationState({
-          type: props.value === undefined ? "pending" : "done",
-        });
+        return {
+          type: "done",
+        };
       },
     },
   });
@@ -38,7 +38,7 @@ export function Phone() {
             if (e.key === "Enter") {
               e.preventDefault();
               e.stopPropagation();
-              void field.handleSubmit();
+              field.handleSubmit();
             }
           }}
           className={cn(
