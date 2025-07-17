@@ -57,7 +57,8 @@ const server = createServer((req, res) => {
     }
 
     default: {
-      console.log(`[${new Date().toISOString()}] GET ${pathname} - Not Found`);
+      const sanitizedPathname = pathname.replace(/[\n\r]/g, "");
+      console.log(`[${new Date().toISOString()}] GET ${sanitizedPathname} - Not Found`);
       sendResponse(404, "Not Found");
       break;
     }
