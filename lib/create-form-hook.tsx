@@ -10,7 +10,7 @@ const DEFAULT_ASYNC_DEBOUNCE = 0;
 class FieldAbortError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "FormAbortError";
+    this.name = "FieldAbortError";
   }
 }
 
