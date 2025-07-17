@@ -1,40 +1,58 @@
 import { useField } from "@/hooks/my-form";
 import { cn } from "@/utils/cn";
-import type { AllowedValidationResult } from "@lib/create-form-hook";
+
+async function isNameValid(name: string, signal: AbortSignal) {
+  const response = await fetch(
+    `http://localhost:3001/${name.length % 2 === 0 ? "ok" : "error"}?delay=1000&value=${name}`,
+    {
+      signal,
+    },
+  );
+
+  return response.ok;
+}
 
 export function Name() {
   const field = useField({
     name: "name",
     validators: {
-      onChange: (props) => {
-        console.log("onChange validator name", props);
+      onSubmit: () => {
+        return;
+      },
+      onSubmitAsync: async (props) => {
+        const isValid = await isNameValid(props.value.firstName, props.signal);
 
-        if (props.value.firstName.length <= 3) {
+        if (!isValid) {
           return {
             type: "error",
-            message: "Name must be at least 3 characters long",
+            message: "Failed to fetch",
           };
         }
 
-        async function asyncValidation(
-          asyncProps: typeof props,
-        ): Promise<AllowedValidationResult> {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          console.log("asyncValidation props:", asyncProps);
-
-          return {
-            type: "done",
-          };
-        }
-
-        return asyncValidation(props);
-      },
-      onSubmit: (props) => {
-        console.log("onSubmit name", props);
         return {
           type: "done",
         };
       },
+      onChange: () => {
+        return {
+          type: "pending",
+        };
+      },
+      onChangeAsync: async (props) => {
+        const isValid = await isNameValid(props.value.firstName, props.signal);
+
+        if (!isValid) {
+          return {
+            type: "error",
+            message: "Failed to fetch",
+          };
+        }
+
+        return {
+          type: "done",
+        };
+      },
+      onChangeAsyncDebounce: 1000,
     },
   });
 

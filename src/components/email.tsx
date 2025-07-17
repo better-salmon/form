@@ -4,38 +4,7 @@ import { cn } from "@/utils/cn";
 export function Email() {
   const field = useField({
     name: "email",
-    validators: {
-      onSubmit: (props) => {
-        console.log("onSubmit email", props);
-
-        if (props.value.length === 0) {
-          return {
-            type: "error",
-            message: "Email is required",
-          };
-        }
-
-        return {
-          type: "done",
-        };
-      },
-      onBlur: (props) => {
-        console.log("onBlur email", props);
-        return new Promise((resolve) => {
-          setTimeout(() => {
-            resolve({
-              type: "done",
-            });
-          }, 1000);
-        });
-      },
-      onChange: (props) => {
-        console.log("onChange email", props);
-        return {
-          type: "pending",
-        };
-      },
-    },
+    validators: {},
   });
 
   return (

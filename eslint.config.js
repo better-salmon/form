@@ -33,6 +33,7 @@ export default tseslint.config([
           "./tsconfig.node.json",
           "./tsconfig.app.json",
           "./tsconfig.lib.json",
+          "./tsconfig.fake.json",
         ],
         tsconfigRootDir: import.meta.dirname,
       },
@@ -50,6 +51,11 @@ export default tseslint.config([
           additionalHooks: "(useIsomorphicEffect)",
         },
       ],
+      "@typescript-eslint/restrict-template-expressions": [
+        "error",
+        { allowNumber: true },
+      ],
+      "@typescript-eslint/no-invalid-void-type": "off",
     },
   },
 ]);
