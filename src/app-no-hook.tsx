@@ -9,18 +9,6 @@ import { cn } from "@/utils/cn";
 
 const queryClient = new QueryClient();
 
-function focusNextField(name: string) {
-  queueMicrotask(() => {
-    const input = document.querySelector<HTMLInputElement>(
-      `input[name="${name}"]`,
-    );
-    if (input) {
-      input.focus();
-      return;
-    }
-  });
-}
-
 export function ReactQueryProvider({
   children,
 }: {
@@ -29,17 +17,6 @@ export function ReactQueryProvider({
   return (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-}
-
-function focusSubmitButton() {
-  queueMicrotask(() => {
-    const button = document.querySelector<HTMLButtonElement>(
-      "button[type='submit']",
-    );
-    if (button) {
-      button.focus();
-    }
-  });
 }
 
 async function getPhone() {
@@ -66,15 +43,10 @@ function App() {
       phone,
     },
     onDoneChange: ({ fieldsMap, changedFields }) => {
-      console.log("onDoneChange", fieldsMap, changedFields);
-      for (const [name, field] of Object.entries(fieldsMap)) {
-        if (field.validationState.type !== "done") {
-          focusNextField(name);
-          return;
-        }
-      }
-
-      focusSubmitButton();
+      console.log(
+        "onDoneChange",
+        changedFields.map((field) => fieldsMap[field].validationState.type),
+      );
     },
   });
 
@@ -89,26 +61,7 @@ function App() {
       <h3 className="text-2xl font-bold">All in one file</h3>
       <Field
         name="name"
-        validators={{
-          onChange: (props) => {
-            console.log("onChange name", props);
-            props.fieldApi.setValidationState({
-              type: "pending",
-            });
-          },
-          onSubmit: (props) => {
-            console.log("onSubmit name", props);
-            // props.fieldApi.setIssue("Name is required");
-            // props.fieldApi.setDone(true);
-          },
-          onSubmitAsync: async (props) => {
-            console.log("onSubmitAsync name", props);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            props.fieldApi.setValidationState({
-              type: "done",
-            });
-          },
-        }}
+        validators={{}}
         render={(field) => (
           <label className="flex flex-col gap-2">
             <span className="px-2 text-sm font-medium">Name</span>
@@ -125,7 +78,7 @@ function App() {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     e.stopPropagation();
-                    void field.handleSubmit();
+                    field.handleSubmit();
                   }
                 }}
                 onChange={(e) => {
@@ -156,28 +109,7 @@ function App() {
       />
       <Field
         name="email"
-        validators={{
-          onSubmit: (props) => {
-            console.log("onSubmit email", props);
-
-            if (props.value.length === 0) {
-              props.fieldApi.setValidationState({
-                type: "error",
-                message: "Email is required",
-              });
-            } else {
-              props.fieldApi.setValidationState({
-                type: "done",
-              });
-            }
-          },
-          onChange: (props) => {
-            console.log("onChange email", props);
-            props.fieldApi.setValidationState({
-              type: "pending",
-            });
-          },
-        }}
+        validators={{}}
         render={(field) => (
           <label className="flex flex-col gap-2">
             <span className="px-2 text-sm font-medium">Email</span>
@@ -196,7 +128,7 @@ function App() {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     e.stopPropagation();
-                    void field.handleSubmit();
+                    field.handleSubmit();
                   }
                 }}
                 className={cn("rounded-md border-2 border-gray-300 p-2 pr-10", {
@@ -221,20 +153,7 @@ function App() {
       />
       <Field
         name="phone"
-        validators={{
-          onSubmit: (props) => {
-            console.log("onSubmit phone", props);
-            props.fieldApi.setValidationState({
-              type: "done",
-            });
-          },
-          onMount: (props) => {
-            console.log("onMount phone", props);
-            props.fieldApi.setValidationState({
-              type: props.value === undefined ? "pending" : "done",
-            });
-          },
-        }}
+        validators={{}}
         render={(field) => (
           <label className="flex flex-col gap-2">
             <span className="px-2 text-sm font-medium">Phone</span>
@@ -255,7 +174,7 @@ function App() {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     e.stopPropagation();
-                    void field.handleSubmit();
+                    field.handleSubmit();
                   }
                 }}
                 className={cn(
@@ -267,16 +186,21 @@ function App() {
                 )}
               />
               <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                {field.validationState.type === "validating" ||
-                  (field.value === undefined && (
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
-                  ))}
-                {field.validationState.type === "done" && (
-                  <span className="text-green-500">✅</span>
+                {field.value === undefined &&
+                  field.validationState.type !== "validating" && (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-violet-600" />
+                  )}
+                {field.validationState.type === "validating" && (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
                 )}
-                {field.validationState.type === "error" && (
-                  <span className="text-red-500">❌</span>
-                )}
+                {field.validationState.type === "done" &&
+                  field.value !== undefined && (
+                    <span className="text-green-500">✅</span>
+                  )}
+                {field.validationState.type === "error" &&
+                  field.value !== undefined && (
+                    <span className="text-red-500">❌</span>
+                  )}
               </div>
             </div>
           </label>

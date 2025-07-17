@@ -11,7 +11,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint --max-warnings 0 .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start:fake-server": "node fake-server/fake-server.ts"
   },
   "dependencies": {
     "mutative": "1.2.0",

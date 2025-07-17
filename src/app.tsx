@@ -12,18 +12,6 @@ import { NextButton } from "@/components/next-button";
 
 const queryClient = new QueryClient();
 
-function focusNextField(name: string) {
-  queueMicrotask(() => {
-    const input = document.querySelector<HTMLInputElement>(
-      `input[name="${name}"]`,
-    );
-    if (input) {
-      input.focus();
-      return;
-    }
-  });
-}
-
 export function ReactQueryProvider({
   children,
 }: {
@@ -32,17 +20,6 @@ export function ReactQueryProvider({
   return (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-}
-
-function focusSubmitButton() {
-  queueMicrotask(() => {
-    const button = document.querySelector<HTMLButtonElement>(
-      "button[type='submit']",
-    );
-    if (button) {
-      button.focus();
-    }
-  });
 }
 
 async function getPhone() {
@@ -69,15 +46,10 @@ function App() {
       phone,
     },
     onDoneChange: ({ fieldsMap, changedFields }) => {
-      console.log("onDoneChange", fieldsMap, changedFields);
-      for (const [name, field] of Object.entries(fieldsMap)) {
-        if (!field.meta.isDone) {
-          focusNextField(name);
-          return;
-        }
-      }
-
-      focusSubmitButton();
+      console.log(
+        "onDoneChange",
+        changedFields.map((field) => fieldsMap[field].validationState.type),
+      );
     },
   });
 

@@ -1,26 +1,58 @@
 import { useField } from "@/hooks/my-form";
 import { cn } from "@/utils/cn";
 
+async function isNameValid(name: string, signal: AbortSignal) {
+  const response = await fetch(
+    `http://localhost:3001/${name.length % 2 === 0 ? "ok" : "error"}?delay=1000&value=${name}`,
+    {
+      signal,
+    },
+  );
+
+  return response.ok;
+}
+
 export function Name() {
   const field = useField({
     name: "name",
     validators: {
-      onChange: (props) => {
-        console.log("onChange name", props);
-        props.fieldApi.setValidationState({
-          type: "pending",
-        });
-      },
-      onSubmit: (props) => {
-        console.log("onSubmit name", props);
+      onSubmit: () => {
+        return;
       },
       onSubmitAsync: async (props) => {
-        console.log("onSubmitAsync async name", props);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        props.fieldApi.setValidationState({
+        const isValid = await isNameValid(props.value.firstName, props.signal);
+
+        if (!isValid) {
+          return {
+            type: "error",
+            message: "Failed to fetch",
+          };
+        }
+
+        return {
           type: "done",
-        });
+        };
       },
+      onChange: () => {
+        return {
+          type: "pending",
+        };
+      },
+      onChangeAsync: async (props) => {
+        const isValid = await isNameValid(props.value.firstName, props.signal);
+
+        if (!isValid) {
+          return {
+            type: "error",
+            message: "Failed to fetch",
+          };
+        }
+
+        return {
+          type: "done",
+        };
+      },
+      onChangeAsyncDebounce: 1000,
     },
   });
 
@@ -38,7 +70,7 @@ export function Name() {
             if (e.key === "Enter") {
               e.preventDefault();
               e.stopPropagation();
-              void field.handleSubmit();
+              field.handleSubmit();
             }
           }}
           onChange={(e) => {

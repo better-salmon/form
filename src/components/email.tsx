@@ -4,28 +4,7 @@ import { cn } from "@/utils/cn";
 export function Email() {
   const field = useField({
     name: "email",
-    validators: {
-      onSubmit: (props) => {
-        console.log("onSubmit email", props);
-
-        if (props.value.length === 0) {
-          props.fieldApi.setValidationState({
-            type: "error",
-            message: "Email is required",
-          });
-        } else {
-          props.fieldApi.setValidationState({
-            type: "done",
-          });
-        }
-      },
-      onChange: (props) => {
-        console.log("onChange email", props);
-        props.fieldApi.setValidationState({
-          type: "pending",
-        });
-      },
-    },
+    validators: {},
   });
 
   return (
@@ -37,6 +16,7 @@ export function Email() {
           name={field.name}
           data-done={field.validationState.type === "done" ? "true" : "false"}
           value={field.value}
+          onBlur={field.handleBlur}
           onChange={(e) => {
             field.handleChange(e.target.value);
           }}
@@ -44,7 +24,7 @@ export function Email() {
             if (e.key === "Enter") {
               e.preventDefault();
               e.stopPropagation();
-              void field.handleSubmit();
+              field.handleSubmit();
             }
           }}
           className={cn("rounded-md border-2 border-gray-300 p-2 pr-10", {
