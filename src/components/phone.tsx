@@ -29,29 +29,21 @@ export function Phone() {
             }
           }}
           className={cn(
-            "rounded-md border-2 border-gray-300 p-2 pr-10 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500",
+            "rounded-md border-2 border-gray-300 p-2 pr-10 outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500",
             {
               "border-red-500": field.validationState.type === "error",
               "border-green-500": field.validationState.type === "done",
+              "border-blue-500": field.validationState.type === "validating",
+              "border-yellow-500": field.validationState.type === "debouncing",
             },
           )}
         />
         <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-          {field.value === undefined &&
-            field.validationState.type !== "validating" && (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-violet-600" />
-            )}
-          {field.validationState.type === "validating" && (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
-          )}
-          {field.validationState.type === "done" &&
-            field.value !== undefined && (
-              <span className="text-green-500">✅</span>
-            )}
-          {field.validationState.type === "error" &&
-            field.value !== undefined && (
-              <span className="text-red-500">❌</span>
-            )}
+          {field.value === undefined && <span>🙈</span>}
+          {field.validationState.type === "validating" && <span>🤔</span>}
+          {field.validationState.type === "done" && <span>✅</span>}
+          {field.validationState.type === "error" && <span>❌</span>}
+          {field.validationState.type === "debouncing" && <span>⏰</span>}
         </div>
       </div>
     </label>
