@@ -1,6 +1,6 @@
 import { useField } from "@/hooks/my-form";
 import { cn } from "@/utils/cn";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 async function isNameValid(name: string, signal: AbortSignal) {
   const response = await fetch(
@@ -35,7 +35,6 @@ export function Name() {
         }
       },
       onSubmitAsync: async (props) => {
-        console.log("onSubmitAsync", await props.validateUsingStandardSchema());
         const isValid = await isNameValid(props.value.firstName, props.signal);
 
         if (!isValid) {
