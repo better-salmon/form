@@ -27,21 +27,21 @@ export function Email() {
               field.handleSubmit();
             }
           }}
-          className={cn("rounded-md border-2 border-gray-300 p-2 pr-10", {
-            "border-red-500": field.validationState.type === "error",
-            "border-green-500": field.validationState.type === "done",
-          })}
+          className={cn(
+            "rounded-md border-2 border-gray-300 p-2 pr-10 outline-none",
+            {
+              "border-red-500": field.validationState.type === "error",
+              "border-green-500": field.validationState.type === "done",
+              "border-blue-500": field.validationState.type === "validating",
+              "border-yellow-500": field.validationState.type === "debouncing",
+            },
+          )}
         />
         <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-          {field.validationState.type === "validating" && (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
-          )}
-          {field.validationState.type === "done" && (
-            <span className="text-green-500">✅</span>
-          )}
-          {field.validationState.type === "error" && (
-            <span className="text-red-500">❌</span>
-          )}
+          {field.validationState.type === "validating" && <span>🤔</span>}
+          {field.validationState.type === "done" && <span>✅</span>}
+          {field.validationState.type === "error" && <span>❌</span>}
+          {field.validationState.type === "debouncing" && <span>⏰</span>}
         </div>
       </div>
     </label>
