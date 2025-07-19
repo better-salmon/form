@@ -1,6 +1,6 @@
 import { createFormHook } from "@lib/create-form-hook";
 
-export const { useForm, useField, useSubscribeTo } = createFormHook<{
+export const { useForm, useField } = createFormHook<{
   name: {
     firstName: string;
     lastName: string;

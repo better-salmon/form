@@ -1,4 +1,4 @@
-import { createContext, use, useMemo, useRef, useState } from "react";
+import { createContext, use, useRef, useState } from "react";
 import { createStore, useStore, type StoreApi } from "zustand";
 import { mutative } from "zustand-mutative";
 import { useShallow } from "zustand/react/shallow";
@@ -30,37 +30,21 @@ export type FieldsMap<T extends DefaultValues> = {
 };
 
 export type ValidatorsMap<T extends DefaultValues> = {
-  [K in keyof T]?: FieldValidators<T, K, Exclude<keyof T, K>>;
-};
-
-export type DependenciesMap<T extends DefaultValues> = {
-  [K in keyof T]?: readonly (keyof T)[];
+  [K in keyof T]?: FieldValidators<T, K>;
 };
 
 export type FieldEntries<T extends DefaultValues> = {
   [K in keyof T]: [K, T[K]];
 }[keyof T][];
 
-export type DependencyFields<
-  T extends DefaultValues,
-  D extends keyof T,
-> = Prettify<Pick<FieldsMap<T>, D>>;
-
 export interface OnDoneChangeProps<T extends DefaultValues> {
   fieldsMap: FieldsMap<T>;
   changedFields: readonly (keyof T)[];
 }
 
-export interface ValidatorProps<
-  T extends DefaultValues,
-  K extends keyof T,
-  D extends Exclude<keyof T, K> = never,
-> {
+export interface ValidatorProps<T extends DefaultValues, K extends keyof T> {
   value: T[K];
   meta: Field<T[K]>["meta"];
-  formApi: {
-    dependencies: DependencyFields<T, D>;
-  };
   validateUsingStandardSchema: () =>
     | readonly StandardSchemaV1.Issue[]
     | undefined;
@@ -69,47 +53,35 @@ export interface ValidatorProps<
 export interface ValidatorAsyncProps<
   T extends DefaultValues,
   K extends keyof T,
-  D extends Exclude<keyof T, K> = never,
 > {
   value: T[K];
   meta: Field<T[K]>["meta"];
-  formApi: {
-    dependencies: DependencyFields<T, D>;
-  };
   validateUsingStandardSchema: () =>
     | Promise<readonly StandardSchemaV1.Issue[] | undefined>
     | undefined;
   signal: AbortSignal;
 }
 
-export type Validator<
-  T extends DefaultValues,
-  K extends keyof T,
-  D extends Exclude<keyof T, K> = never,
-> = (props: ValidatorProps<T, K, D>) => AllowedValidationResult | void;
+export type Validator<T extends DefaultValues, K extends keyof T> = (
+  props: ValidatorProps<T, K>,
+) => AllowedValidationResult | void;
 
-export type ValidatorAsync<
-  T extends DefaultValues,
-  K extends keyof T,
-  D extends Exclude<keyof T, K> = never,
-> = (props: ValidatorAsyncProps<T, K, D>) => Promise<AllowedValidationResult>;
+export type ValidatorAsync<T extends DefaultValues, K extends keyof T> = (
+  props: ValidatorAsyncProps<T, K>,
+) => Promise<AllowedValidationResult>;
 
-export interface FieldValidators<
-  T extends DefaultValues,
-  K extends keyof T,
-  D extends Exclude<keyof T, K> = never,
-> {
-  readonly onBlur?: Validator<T, K, D>;
-  readonly onBlurAsync?: ValidatorAsync<T, K, D>;
+export interface FieldValidators<T extends DefaultValues, K extends keyof T> {
+  readonly onBlur?: Validator<T, K>;
+  readonly onBlurAsync?: ValidatorAsync<T, K>;
   readonly onBlurAsyncDebounce?: number;
-  readonly onChange?: Validator<T, K, D>;
-  readonly onChangeAsync?: ValidatorAsync<T, K, D>;
+  readonly onChange?: Validator<T, K>;
+  readonly onChangeAsync?: ValidatorAsync<T, K>;
   readonly onChangeAsyncDebounce?: number;
-  readonly onSubmit?: Validator<T, K, D>;
-  readonly onSubmitAsync?: ValidatorAsync<T, K, D>;
+  readonly onSubmit?: Validator<T, K>;
+  readonly onSubmitAsync?: ValidatorAsync<T, K>;
   readonly onSubmitAsyncDebounce?: number;
-  readonly onMount?: Validator<T, K, D>;
-  readonly onMountAsync?: ValidatorAsync<T, K, D>;
+  readonly onMount?: Validator<T, K>;
+  readonly onMountAsync?: ValidatorAsync<T, K>;
   readonly onMountAsyncDebounce?: number;
 }
 
@@ -156,30 +128,24 @@ export interface Field<T = unknown> {
   validationState: ValidationResult;
 }
 
-export interface FormApi<T extends DefaultValues, D extends keyof T = never> {
+export interface FormApi<T extends DefaultValues> {
   submit: (fields?: readonly (keyof T)[]) => void;
-  dependencies: DependencyFields<T, D>;
 }
 
-export interface FieldApi<
-  T extends DefaultValues,
-  K extends keyof T,
-  D extends Exclude<keyof T, K> = never,
-> {
+export interface FieldApi<T extends DefaultValues, K extends keyof T> {
   name: K;
   value: T[K];
   handleChange: (value: T[K]) => void;
   handleSubmit: () => void;
   handleBlur: () => void;
   meta: Field<T[K]>["meta"];
-  formApi: Prettify<FormApi<T, D>>;
+  formApi: Prettify<FormApi<T>>;
   validationState: ValidationResult;
 }
 
 export interface Store<T extends DefaultValues> {
   fieldsMap: FieldsMap<T>;
   validatorsMap: ValidatorsMap<T>;
-  dependenciesMap: DependenciesMap<T>;
   defaultValues: T;
   asyncDebounceMap: Record<keyof T, number>;
   asyncTimeoutMap: Record<keyof T, NodeJS.Timeout | null>;
@@ -198,13 +164,9 @@ export interface Actions<T extends DefaultValues> {
     field: keyof T,
     validationState?: ValidationResult,
   ) => void;
-  setValidators: <K extends keyof T, D extends Exclude<keyof T, K> = never>(
+  setValidators: <K extends keyof T>(
     field: K,
-    validators?: FieldValidators<T, K, D>,
-  ) => void;
-  setDependencies: <K extends keyof T>(
-    field: K,
-    dependencies?: readonly Exclude<keyof T, K>[],
+    validators?: FieldValidators<T, K>,
   ) => void;
   setDefaultValues: (defaultValues: T) => void;
   setAsyncDebounce: (field: keyof T, debounce: number) => void;
@@ -234,48 +196,28 @@ export interface UseFormOptions<T extends DefaultValues> {
 }
 
 export interface UseFormResult<T extends DefaultValues> {
-  Field: <K extends keyof T, D extends Exclude<keyof T, K> = never>(
-    props: FieldProps<T, K, D>,
-  ) => React.ReactNode;
-
-  SubscribeTo: <K extends keyof T>(props: {
-    dependencies: readonly K[];
-    render: (fieldsMap: Prettify<Pick<FieldsMap<T>, K>>) => React.ReactNode;
-  }) => React.ReactNode;
-
+  Field: <K extends keyof T>(props: FieldProps<T, K>) => React.ReactNode;
   formStore: ReturnType<typeof createFormStoreMutative<T>>;
-
   Form: (props: React.ComponentProps<"form">) => React.ReactElement;
 }
 
-export interface UseFieldOptions<
-  T extends DefaultValues,
-  K extends keyof T,
-  D extends Exclude<keyof T, K> = never,
-> {
+export interface UseFieldOptions<T extends DefaultValues, K extends keyof T> {
   name: K;
-  validators?: FieldValidators<T, K, D>;
-  dependencies?: readonly D[];
+  validators?: FieldValidators<T, K>;
   asyncDebounce?: number;
   standardSchema?: StandardSchemaV1<T[K]>;
 }
 
-export interface FieldProps<
-  T extends DefaultValues,
-  K extends keyof T,
-  D extends Exclude<keyof T, K> = never,
-> extends UseFieldOptions<T, K, D> {
-  render: (props: Prettify<FieldApi<T, K, D>>) => React.ReactNode;
+export interface FieldProps<T extends DefaultValues, K extends keyof T>
+  extends UseFieldOptions<T, K> {
+  render: (props: Prettify<FieldApi<T, K>>) => React.ReactNode;
 }
 
 export interface CreateFormHookResult<T extends DefaultValues> {
   useForm: (options: UseFormOptions<T>) => UseFormResult<T>;
-  useField: <K extends keyof T, D extends Exclude<keyof T, K> = never>(
-    options: UseFieldOptions<T, K, D>,
-  ) => Prettify<FieldApi<T, K, D>>;
-  useSubscribeTo: <K extends keyof T>(props: {
-    dependencies: readonly K[];
-  }) => Prettify<Pick<FieldsMap<T>, K>>;
+  useField: <K extends keyof T>(
+    options: UseFieldOptions<T, K>,
+  ) => Prettify<FieldApi<T, K>>;
 }
 
 function createInitialFieldsMap<T extends DefaultValues>(
@@ -301,15 +243,6 @@ function createInitialFieldsMap<T extends DefaultValues>(
   ) as FieldsMap<T>;
 }
 
-function createDependencyFields<T extends DefaultValues, K extends keyof T>(
-  fieldsMap: FieldsMap<T>,
-  dependencies: readonly (keyof T)[],
-): DependencyFields<T, Exclude<keyof T, K>> {
-  return Object.fromEntries(
-    dependencies.map((dep) => [dep, fieldsMap[dep]]),
-  ) as DependencyFields<T, Exclude<keyof T, K>>;
-}
-
 function getFieldNames<T extends DefaultValues>(
   fieldsMap: FieldsMap<T>,
 ): (keyof T)[] {
@@ -327,7 +260,6 @@ function createFormStoreMutative<T extends DefaultValues>(
       >,
       defaultValues: options.defaultValues,
       validatorsMap: {} as ValidatorsMap<T>,
-      dependenciesMap: {} as DependenciesMap<T>,
       asyncDebounceMap: {} as Record<keyof T, number>,
       asyncTimeoutMap: {} as Record<keyof T, NodeJS.Timeout | null>,
       asyncAbortControllerMap: {} as Record<keyof T, AbortController | null>,
@@ -344,9 +276,9 @@ function createFormStoreMutative<T extends DefaultValues>(
           )[field] = schema;
         });
       },
-      setValidators: <K extends keyof T, D extends Exclude<keyof T, K> = never>(
+      setValidators: <K extends keyof T>(
         field: K,
-        validators?: FieldValidators<T, K, D>,
+        validators?: FieldValidators<T, K>,
       ) => {
         set((state) => {
           (state.validatorsMap as ValidatorsMap<T>)[field] = validators;
@@ -374,15 +306,6 @@ function createFormStoreMutative<T extends DefaultValues>(
         for (const field of fieldsToSubmit) {
           get().runValidation(field, "onSubmit");
         }
-      },
-      setDependencies: <K extends keyof T>(
-        field: K,
-        dependencies?: readonly Exclude<keyof T, K>[],
-      ) => {
-        set((state) => {
-          (state.dependenciesMap as DependenciesMap<T>)[field] =
-            dependencies ?? [];
-        });
       },
       setDefaultValues: (defaultValues: T) => {
         set((state) => {
@@ -487,17 +410,9 @@ function createFormStoreMutative<T extends DefaultValues>(
           const abortController = new AbortController();
           currentSnapshot.setAsyncAbortController(field, abortController);
 
-          const dependenciesData = createDependencyFields<T, keyof T>(
-            currentSnapshot.fieldsMap,
-            currentSnapshot.dependenciesMap[field] ?? [],
-          );
-
           const asyncValidationState = currentAsyncValidator({
             value: currentValue,
             meta: currentSnapshot.fieldsMap[field].meta,
-            formApi: {
-              dependencies: dependenciesData,
-            },
             validateUsingStandardSchema: () => {
               if (!standardSchema) {
                 return;
@@ -565,17 +480,9 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         const value = snapshot.fieldsMap[field].value;
 
-        const dependenciesData = createDependencyFields<T, keyof T>(
-          snapshot.fieldsMap,
-          snapshot.dependenciesMap[field] ?? [],
-        );
-
         const validationResult = validator?.({
           value,
           meta: snapshot.fieldsMap[field].meta,
-          formApi: {
-            dependencies: dependenciesData,
-          },
           validateUsingStandardSchema: () => {
             if (!standardSchema) {
               return;
@@ -660,78 +567,29 @@ function FormProvider({
   return <FormContext value={formStore}>{children}</FormContext>;
 }
 
-function Field<
-  T extends DefaultValues,
-  K extends keyof T,
-  D extends Exclude<keyof T, K> = never,
->(props: FieldProps<T, K, D>) {
-  const field = useField<T, K, D>({
+function Field<T extends DefaultValues, K extends keyof T>(
+  props: FieldProps<T, K>,
+) {
+  const field = useField<T, K>({
     name: props.name,
     validators: props.validators,
-    dependencies: props.dependencies,
     asyncDebounce: props.asyncDebounce,
   });
 
   return props.render(field);
 }
 
-function SubscribeTo<T extends DefaultValues, K extends keyof T>(props: {
-  dependencies: readonly K[];
-  render: (fieldsMap: Prettify<Pick<FieldsMap<T>, K>>) => React.ReactNode;
-}) {
-  const fields = useSubscribeTo<T, K>({
-    dependencies: props.dependencies,
-  });
-
-  return props.render(fields);
-}
-
-function useSubscribeTo<T extends DefaultValues, K extends keyof T>(props: {
-  dependencies: readonly K[];
-}) {
+function useField<T extends DefaultValues, K extends keyof T>(
+  options: UseFieldOptions<T, K>,
+): FieldApi<T, K> {
   const formStore = use(FormContext) as StoreApi<Store<T> & Actions<T>> | null;
 
   if (!formStore) {
     throw new Error("FormProvider is not found");
   }
-
-  const selector = useShallow(
-    (state: Store<T>): Pick<FieldsMap<T>, K> =>
-      Object.fromEntries(
-        props.dependencies.map((name) => [name, state.fieldsMap[name]]),
-      ) as Pick<FieldsMap<T>, K>,
-  );
-
-  return useStore(formStore, selector);
-}
-
-function useField<
-  T extends DefaultValues,
-  K extends keyof T,
-  D extends Exclude<keyof T, K> = never,
->(options: UseFieldOptions<T, K, D>): FieldApi<T, K, D> {
-  const formStore = use(FormContext) as StoreApi<Store<T> & Actions<T>> | null;
-
-  if (!formStore) {
-    throw new Error("FormProvider is not found");
-  }
-
-  const dependenciesArray = useMemo(
-    () => options.dependencies ?? ([] as readonly D[]),
-    [options.dependencies],
-  );
 
   const isMountedRef = useRef(false);
 
-  const dependencies = useStore(
-    formStore,
-    useShallow(
-      (state: Store<T>): DependencyFields<T, D> =>
-        Object.fromEntries(
-          dependenciesArray.map((name) => [name, state.fieldsMap[name]]),
-        ) as DependencyFields<T, D>,
-    ),
-  );
   const field = useStore(
     formStore,
     useShallow((state: Store<T>) => state.fieldsMap[options.name]),
@@ -752,36 +610,15 @@ function useField<
     submit([options.name]);
   };
 
-  const formApi: FormApi<T, D> = {
+  const formApi: FormApi<T> = {
     submit: (fields?: readonly (keyof T)[]) => {
       submit(fields);
     },
-    dependencies,
   };
 
   const handleBlur = () => {
     runValidation(options.name, "onBlur");
   };
-
-  useIsomorphicEffect(() => {
-    if (
-      !deepEqual(
-        dependenciesArray,
-        formStore.getState().dependenciesMap[options.name],
-      )
-    ) {
-      formStore.getState().setDependencies(options.name, dependenciesArray);
-    }
-
-    if (
-      !deepEqual(
-        options.validators,
-        formStore.getState().validatorsMap[options.name],
-      )
-    ) {
-      formStore.getState().setValidators(options.name, options.validators);
-    }
-  }, [dependenciesArray, formStore, options.name, options.validators]);
 
   useIsomorphicEffect(() => {
     const currentDebounce = formStore.getState().asyncDebounceMap[options.name];
@@ -846,7 +683,6 @@ export function useForm<T extends DefaultValues>(
 
   return {
     Field,
-    SubscribeTo,
     formStore,
     Form: (props: React.ComponentProps<"form">) => (
       <FormProvider
@@ -866,6 +702,5 @@ export function createFormHook<
   return {
     useForm,
     useField,
-    useSubscribeTo,
   };
 }
