@@ -176,8 +176,8 @@ export interface Actions<T extends DefaultValues> {
   setValidatorsMap: <K extends keyof T>(
     field: K,
     validators: {
-      synchronousValidator?: Validator<T[K]>;
-      asynchronousValidator?: AsyncValidator<T[K]>;
+      validator?: Validator<T[K]>;
+      asyncValidator?: AsyncValidator<T[K]>;
       debounce?: number;
     },
   ) => void;
@@ -225,25 +225,25 @@ export interface UseFormResult<T extends DefaultValues> {
   Form: (props: React.ComponentProps<"form">) => React.ReactElement;
 }
 
-// When asynchronousValidator is provided, synchronousValidator can return triggers
+// When asyncValidator is provided, validator can return triggers
 export interface UseFieldOptionsWithAsync<
   T extends DefaultValues,
   K extends keyof T,
 > {
   name: K;
-  synchronousValidator?: Validator<T[K]>;
-  asynchronousValidator: AsyncValidator<T[K]>;
+  validator?: Validator<T[K]>;
+  asyncValidator: AsyncValidator<T[K]>;
   debounce?: number;
 }
 
-// When asynchronousValidator is not provided, synchronousValidator cannot return triggers
+// When asyncValidator is not provided, validator cannot return triggers
 export interface UseFieldOptionsWithoutAsync<
   T extends DefaultValues,
   K extends keyof T,
 > {
   name: K;
-  synchronousValidator?: Validator<T[K]>;
-  asynchronousValidator?: never;
+  validator?: Validator<T[K]>;
+  asyncValidator?: never;
   debounce?: number;
 }
 
@@ -552,12 +552,12 @@ function createFormStoreMutative<T extends DefaultValues>(
           return;
         }
 
-        const synchronousValidatorResult = validators.validator?.({
+        const validatorResult = validators.validator?.({
           action,
           value: currentField.value,
         });
 
-        const resultOrTrigger = synchronousValidatorResult ?? {
+        const resultOrTrigger = validatorResult ?? {
           type: "skip",
         };
 
@@ -748,15 +748,15 @@ function useField<T extends DefaultValues, K extends keyof T>(
 
   useIsomorphicEffect(() => {
     setValidatorsMap(options.name, {
-      synchronousValidator: options.synchronousValidator,
-      asynchronousValidator: options.asynchronousValidator,
+      validator: options.validator,
+      asyncValidator: options.asyncValidator,
       debounce: options.debounce,
     });
   }, [
-    options.asynchronousValidator,
+    options.asyncValidator,
     options.debounce,
     options.name,
-    options.synchronousValidator,
+    options.validator,
     setValidatorsMap,
   ]);
 
