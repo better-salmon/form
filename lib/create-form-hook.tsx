@@ -27,6 +27,7 @@ interface RunningValidation<T = unknown> {
   stateSnapshot: T;
   abortController: AbortController;
   timeoutId?: NodeJS.Timeout;
+  validationId: number;
 }
 
 type RunningValidationsMap<T extends DefaultValues> = {
@@ -95,7 +96,6 @@ export interface Field<T = unknown> {
     numberOfSubmissions: number;
   };
   validationState: FieldState;
-  lastValidatedValue?: T;
 }
 
 interface FieldValidationProps<T> {
@@ -134,9 +134,17 @@ export type ValidatorsMap<T extends DefaultValues> = {
   };
 };
 
+export type LastValidatedFieldsMap<T extends DefaultValues> = {
+  [K in keyof T]?: T[K];
+};
+
 export type FieldEntries<T extends DefaultValues> = {
   [K in keyof T]: [K, T[K]];
 }[keyof T][];
+
+export type ValidationIdsMap<T extends DefaultValues> = {
+  [K in keyof T]: number;
+};
 
 // ============================================================================
 // API TYPES
@@ -167,6 +175,8 @@ export interface Store<T extends DefaultValues> {
   validatorsMap: ValidatorsMap<T>;
   runningValidations: RunningValidationsMap<T>;
   debounceDelayMs: number;
+  lastValidatedFields: LastValidatedFieldsMap<T>;
+  validationIds: ValidationIdsMap<T>;
 }
 
 export interface Actions<T extends DefaultValues> {
@@ -183,6 +193,7 @@ export interface Actions<T extends DefaultValues> {
   ) => void;
   validate: (field: keyof T, action: Action) => void;
   cleanupValidation: (field: keyof T) => void;
+  incrementValidationId: (field: keyof T) => number;
   scheduleValidation: <K extends keyof T>(
     field: K,
     value: T[K],
@@ -322,6 +333,10 @@ function createFormStoreMutative<T extends DefaultValues>(
       validatorsMap: {},
       runningValidations: {},
       debounceDelayMs: 500,
+      lastValidatedFields: {},
+      validationIds: Object.fromEntries(
+        Object.keys(options.defaultValues).map((field) => [field, 0]),
+      ) as ValidationIdsMap<T>,
 
       // ========================================================================
       // CONFIGURATION ACTIONS
@@ -410,11 +425,27 @@ function createFormStoreMutative<T extends DefaultValues>(
       },
 
       /**
+       * Increments the validation ID for a field and returns the new ID
+       */
+      incrementValidationId: (field) => {
+        const currentId = get().validationIds[field];
+        const newId = currentId + 1;
+        set((state) => {
+          const validationIds = state.validationIds as ValidationIdsMap<T>;
+          validationIds[field] = newId;
+        });
+        return newId;
+      },
+
+      /**
        * Schedules validation for a field (starts debouncing phase)
        */
       scheduleValidation: (field, value, validator, debounceMs, action) => {
         // Cancel any existing validation first
         get().cleanupValidation(field);
+
+        // Increment validation ID for this field
+        const validationId = get().incrementValidationId(field);
 
         // Create new abort controller
         const abortController = new AbortController();
@@ -449,6 +480,7 @@ function createFormStoreMutative<T extends DefaultValues>(
             stateSnapshot: value,
             abortController,
             timeoutId,
+            validationId,
           } satisfies RunningValidation<T[typeof field]>;
         });
       },
@@ -460,6 +492,9 @@ function createFormStoreMutative<T extends DefaultValues>(
         // Abort any existing validation for this field
         get().cleanupValidation(field);
 
+        // Increment validation ID for this field
+        const validationId = get().incrementValidationId(field);
+
         // Create new abort controller
         const abortController = new AbortController();
 
@@ -468,16 +503,19 @@ function createFormStoreMutative<T extends DefaultValues>(
           const runningValidationsMap =
             state.runningValidations as RunningValidationsMap<T>;
           const fieldsMap = state.fieldsMap as FieldsMap<T>;
+          const lastValidatedFields =
+            state.lastValidatedFields as LastValidatedFieldsMap<T>;
 
           runningValidationsMap[field] = {
             stateSnapshot: value,
             abortController,
             timeoutId: undefined,
+            validationId,
           } satisfies RunningValidation<T[typeof field]>;
 
           // Set field state to checking and store the value being validated
           fieldsMap[field].validationState = { type: "checking" };
-          fieldsMap[field].lastValidatedValue = value;
+          lastValidatedFields[field] = value;
         });
 
         // Run async validation in a separate async context
@@ -489,6 +527,13 @@ function createFormStoreMutative<T extends DefaultValues>(
           .then((result) => {
             // Check if validation was aborted
             if (abortController.signal.aborted) {
+              return;
+            }
+
+            // Check if this validation is still current by comparing validation IDs
+            const currentValidationId = get().validationIds[field];
+            if (validationId !== currentValidationId) {
+              // This validation is stale, discard the result
               return;
             }
 
@@ -504,6 +549,13 @@ function createFormStoreMutative<T extends DefaultValues>(
           .catch((error: unknown) => {
             // Check if validation was aborted
             if (abortController.signal.aborted) {
+              return;
+            }
+
+            // Check if this validation is still current by comparing validation IDs
+            const currentValidationId = get().validationIds[field];
+            if (validationId !== currentValidationId) {
+              // This validation is stale, discard the result
               return;
             }
 
@@ -537,13 +589,13 @@ function createFormStoreMutative<T extends DefaultValues>(
       },
 
       validate: (field, action) => {
-        const snapshot = get();
         const {
           fieldsMap,
           validatorsMap,
           runningValidations,
           debounceDelayMs,
-        } = snapshot;
+          lastValidatedFields,
+        } = get();
 
         const currentField = fieldsMap[field];
         const validators = validatorsMap[field];
@@ -591,11 +643,8 @@ function createFormStoreMutative<T extends DefaultValues>(
               // No running validation - check if value changed from last validated value
 
               if (
-                (currentField.lastValidatedValue !== undefined &&
-                  deepEqual(
-                    currentField.lastValidatedValue,
-                    currentField.value,
-                  )) ||
+                (lastValidatedFields[field] !== undefined &&
+                  deepEqual(lastValidatedFields[field], currentField.value)) ||
                 currentField.validationState.type === "valid" ||
                 currentField.validationState.type === "invalid"
               ) {
