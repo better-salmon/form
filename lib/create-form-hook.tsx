@@ -10,7 +10,15 @@ import {
   standardValidateAsync,
 } from "@lib/standard-validate";
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
 const DEFAULT_ASYNC_DEBOUNCE = 0;
+
+// ============================================================================
+// ERROR CLASSES
+// ============================================================================
 
 class FieldAbortError extends Error {
   constructor(message: string) {
@@ -19,28 +27,63 @@ class FieldAbortError extends Error {
   }
 }
 
+// ============================================================================
+// UTILITY TYPES
+// ============================================================================
+
 type Prettify<T> = {
   [K in keyof T]: T[K];
 } & {};
 
 type DefaultValues = Record<string, unknown>;
 
-export type FieldsMap<T extends DefaultValues> = {
-  [K in keyof T]: Field<T[K]>;
-};
+// Action types for validation
+type ValidationAction = "onBlur" | "onChange" | "onSubmit" | "onMount";
 
-export type ValidatorsMap<T extends DefaultValues> = {
-  [K in keyof T]?: FieldValidators<T, K>;
-};
+// Template literal types for async validator names
+type AsyncValidatorName<T extends ValidationAction> = `${T}Async`;
+type AsyncDebounceName<T extends ValidationAction> = `${T}AsyncDebounce`;
 
-export type FieldEntries<T extends DefaultValues> = {
-  [K in keyof T]: [K, T[K]];
-}[keyof T][];
+// ============================================================================
+// VALIDATION TYPES
+// ============================================================================
 
-export interface OnDoneChangeProps<T extends DefaultValues> {
-  fieldsMap: FieldsMap<T>;
-  changedFields: readonly (keyof T)[];
+export interface ErrorValidationResult {
+  type: "error";
+  message: string;
 }
+
+export interface DoneValidationResult {
+  type: "done";
+}
+
+export interface IdleValidationResult {
+  type: "idle";
+}
+
+export interface ValidatingValidationResult {
+  type: "validating";
+}
+
+export interface DebouncingValidationResult {
+  type: "debouncing";
+}
+
+export type ValidationResult =
+  | ErrorValidationResult
+  | DoneValidationResult
+  | IdleValidationResult
+  | ValidatingValidationResult
+  | DebouncingValidationResult;
+
+export type AllowedValidationResult = Exclude<
+  ValidationResult,
+  ValidatingValidationResult | DebouncingValidationResult
+>;
+
+// ============================================================================
+// VALIDATOR TYPES
+// ============================================================================
 
 export interface ValidatorProps<T extends DefaultValues, K extends keyof T> {
   value: T[K];
@@ -85,38 +128,9 @@ export interface FieldValidators<T extends DefaultValues, K extends keyof T> {
   readonly onMountAsyncDebounce?: number;
 }
 
-export interface ErrorValidationResult {
-  type: "error";
-  message: string;
-}
-
-export interface DoneValidationResult {
-  type: "done";
-}
-
-export interface IdleValidationResult {
-  type: "idle";
-}
-
-export interface ValidatingValidationResult {
-  type: "validating";
-}
-
-export interface DebouncingValidationResult {
-  type: "debouncing";
-}
-
-export type ValidationResult =
-  | ErrorValidationResult
-  | DoneValidationResult
-  | IdleValidationResult
-  | ValidatingValidationResult
-  | DebouncingValidationResult;
-
-export type AllowedValidationResult = Exclude<
-  ValidationResult,
-  ValidatingValidationResult | DebouncingValidationResult
->;
+// ============================================================================
+// FIELD TYPES
+// ============================================================================
 
 export interface Field<T = unknown> {
   value: T;
@@ -127,6 +141,22 @@ export interface Field<T = unknown> {
   };
   validationState: ValidationResult;
 }
+
+export type FieldsMap<T extends DefaultValues> = {
+  [K in keyof T]: Field<T[K]>;
+};
+
+export type ValidatorsMap<T extends DefaultValues> = {
+  [K in keyof T]?: FieldValidators<T, K>;
+};
+
+export type FieldEntries<T extends DefaultValues> = {
+  [K in keyof T]: [K, T[K]];
+}[keyof T][];
+
+// ============================================================================
+// API TYPES
+// ============================================================================
 
 export interface FormApi<T extends DefaultValues> {
   submit: (fields?: readonly (keyof T)[]) => void;
@@ -142,6 +172,10 @@ export interface FieldApi<T extends DefaultValues, K extends keyof T> {
   formApi: Prettify<FormApi<T>>;
   validationState: ValidationResult;
 }
+
+// ============================================================================
+// STORE TYPES
+// ============================================================================
 
 export interface Store<T extends DefaultValues> {
   fieldsMap: FieldsMap<T>;
@@ -176,18 +210,32 @@ export interface Actions<T extends DefaultValues> {
     controller: AbortController | null,
   ) => void;
   abortAsyncValidation: (field: keyof T, reason?: string) => void;
-  scheduleAsyncValidation: (
+  scheduleAsyncValidation: (field: keyof T, action: ValidationAction) => void;
+  executeAsyncValidation: (
     field: keyof T,
-    action: "onBlur" | "onChange" | "onSubmit" | "onMount",
+    action: ValidationAction,
+    expectedValue: T[keyof T],
+  ) => void;
+  handleAsyncValidationResult: (
+    field: keyof T,
+    validationState: AllowedValidationResult | null,
+    abortController: AbortController,
+    error: unknown,
   ) => void;
   runSyncValidation: (
     field: keyof T,
-    action: "onBlur" | "onChange" | "onSubmit" | "onMount",
+    action: ValidationAction,
   ) => AllowedValidationResult | undefined;
-  runValidation: (
-    field: keyof T,
-    action: "onBlur" | "onChange" | "onSubmit" | "onMount",
-  ) => void;
+  runValidation: (field: keyof T, action: ValidationAction) => void;
+}
+
+// ============================================================================
+// COMPONENT & HOOK OPTION TYPES
+// ============================================================================
+
+export interface OnDoneChangeProps<T extends DefaultValues> {
+  fieldsMap: FieldsMap<T>;
+  changedFields: readonly (keyof T)[];
 }
 
 export interface UseFormOptions<T extends DefaultValues> {
@@ -220,6 +268,13 @@ export interface CreateFormHookResult<T extends DefaultValues> {
   ) => Prettify<FieldApi<T, K>>;
 }
 
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+/**
+ * Creates initial fields map from default values
+ */
 function createInitialFieldsMap<T extends DefaultValues>(
   defaultValues: T,
 ): FieldsMap<T> {
@@ -243,17 +298,30 @@ function createInitialFieldsMap<T extends DefaultValues>(
   ) as FieldsMap<T>;
 }
 
+/**
+ * Extracts field names from fields map
+ */
 function getFieldNames<T extends DefaultValues>(
   fieldsMap: FieldsMap<T>,
 ): (keyof T)[] {
   return Object.keys(fieldsMap) as (keyof T)[];
 }
 
+// ============================================================================
+// STORE CREATION
+// ============================================================================
+
+/**
+ * Creates the main form store with mutative capabilities
+ */
 function createFormStoreMutative<T extends DefaultValues>(
   options: UseFormOptions<T>,
 ) {
   return createStore<Store<T> & Actions<T>>()(
     mutative((set, get) => ({
+      // ========================================================================
+      // STORE STATE
+      // ========================================================================
       standardSchemaMap: {} as Record<
         keyof T,
         StandardSchemaV1<T[keyof T]> | undefined
@@ -263,6 +331,11 @@ function createFormStoreMutative<T extends DefaultValues>(
       asyncDebounceMap: {} as Record<keyof T, number>,
       asyncTimeoutMap: {} as Record<keyof T, NodeJS.Timeout | null>,
       asyncAbortControllerMap: {} as Record<keyof T, AbortController | null>,
+      fieldsMap: createInitialFieldsMap(options.defaultValues),
+
+      // ========================================================================
+      // CONFIGURATION ACTIONS
+      // ========================================================================
       setStandardSchema: <K extends keyof T>(
         field: K,
         schema?: StandardSchemaV1<T[K]>,
@@ -276,6 +349,7 @@ function createFormStoreMutative<T extends DefaultValues>(
           )[field] = schema;
         });
       },
+
       setValidators: <K extends keyof T>(
         field: K,
         validators?: FieldValidators<T, K>,
@@ -284,7 +358,27 @@ function createFormStoreMutative<T extends DefaultValues>(
           (state.validatorsMap as ValidatorsMap<T>)[field] = validators;
         });
       },
-      fieldsMap: createInitialFieldsMap(options.defaultValues),
+
+      setDefaultValues: (defaultValues: T) => {
+        set((state) => {
+          (state.defaultValues as T) = defaultValues;
+
+          for (const [field] of Object.entries(defaultValues)) {
+            (state.fieldsMap as FieldsMap<T>)[field as keyof T].value ??=
+              defaultValues[field as keyof T];
+          }
+        });
+      },
+
+      setAsyncDebounce: (field: keyof T, debounce: number) => {
+        set((state) => {
+          (state.asyncDebounceMap as Record<keyof T, number>)[field] = debounce;
+        });
+      },
+
+      // ========================================================================
+      // VALUE ACTIONS
+      // ========================================================================
       setValue: <K extends keyof T>(field: K, value: T[K]) => {
         set((state) => {
           const fieldsMap = state.fieldsMap as FieldsMap<T>;
@@ -299,6 +393,7 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         get().runValidation(field, "onChange");
       },
+
       submit: (fields?: readonly (keyof T)[]) => {
         const snapshot = get();
         const fieldsToSubmit = fields ?? getFieldNames(snapshot.fieldsMap);
@@ -307,21 +402,38 @@ function createFormStoreMutative<T extends DefaultValues>(
           get().runValidation(field, "onSubmit");
         }
       },
-      setDefaultValues: (defaultValues: T) => {
-        set((state) => {
-          (state.defaultValues as T) = defaultValues;
 
-          for (const [field] of Object.entries(defaultValues)) {
-            (state.fieldsMap as FieldsMap<T>)[field as keyof T].value ??=
-              defaultValues[field as keyof T];
-          }
-        });
-      },
-      setAsyncDebounce: (field: keyof T, debounce: number) => {
+      setValidationState: (
+        field: keyof T,
+        validationState?: ValidationResult,
+      ) => {
+        if (!validationState) {
+          return;
+        }
+
+        const previousValidationStateType =
+          get().fieldsMap[field].validationState.type;
+
         set((state) => {
-          (state.asyncDebounceMap as Record<keyof T, number>)[field] = debounce;
+          const fieldsMap = state.fieldsMap as FieldsMap<T>;
+          fieldsMap[field].validationState = validationState;
         });
+
+        // Notify about done state changes
+        if (
+          (previousValidationStateType === "done") !==
+          (validationState.type === "done")
+        ) {
+          options.onDoneChange?.({
+            fieldsMap: get().fieldsMap,
+            changedFields: [field],
+          });
+        }
       },
+
+      // ========================================================================
+      // ASYNC VALIDATION MANAGEMENT
+      // ========================================================================
       clearAsyncTimeout: (field: keyof T) => {
         set((state) => {
           (state.asyncTimeoutMap as Record<keyof T, NodeJS.Timeout | null>)[
@@ -329,6 +441,7 @@ function createFormStoreMutative<T extends DefaultValues>(
           ] = null;
         });
       },
+
       setAsyncAbortController: (
         field: keyof T,
         controller: AbortController | null,
@@ -342,6 +455,7 @@ function createFormStoreMutative<T extends DefaultValues>(
           )[field] = controller;
         });
       },
+
       abortAsyncValidation: (field: keyof T, reason?: string) => {
         const snapshot = get();
 
@@ -361,123 +475,160 @@ function createFormStoreMutative<T extends DefaultValues>(
           snapshot.clearAsyncTimeout(field);
         }
       },
-      scheduleAsyncValidation: (
-        field: keyof T,
-        action: "onBlur" | "onChange" | "onSubmit" | "onMount",
-      ) => {
+
+      scheduleAsyncValidation: (field: keyof T, action: ValidationAction) => {
         const snapshot = get();
+        const currentValue = snapshot.fieldsMap[field].value;
 
-        const value = snapshot.fieldsMap[field].value;
-
-        const asyncValidatorName = `${action}Async` as const;
-        const asyncDebounceName = `${action}AsyncDebounce` as const;
+        const asyncValidatorName: AsyncValidatorName<typeof action> =
+          `${action}Async`;
+        const asyncDebounceName: AsyncDebounceName<typeof action> =
+          `${action}AsyncDebounce`;
 
         const asyncValidator =
           snapshot.validatorsMap[field]?.[asyncValidatorName];
-
-        const asyncDebounceMs =
-          snapshot.validatorsMap[field]?.[asyncDebounceName] ??
-          snapshot.asyncDebounceMap[field];
 
         if (!asyncValidator) {
           return;
         }
 
+        const debounceMs =
+          snapshot.validatorsMap[field]?.[asyncDebounceName] ??
+          snapshot.asyncDebounceMap[field];
+
         // Abort existing async validation before starting new one
-        snapshot.abortAsyncValidation(field, "Aborted by new validation");
+        snapshot.abortAsyncValidation(field, "Superseded by new validation");
 
         // Set debouncing state immediately
         snapshot.setValidationState(field, {
           type: "debouncing",
         });
 
-        // Set up debounced async validation
+        // Create and store the new timeout
         const timeoutId = setTimeout(() => {
-          const currentSnapshot = get();
-          const standardSchema = currentSnapshot.standardSchemaMap[field];
+          snapshot.executeAsyncValidation(field, action, currentValue);
+        }, debounceMs);
 
-          const currentValue = currentSnapshot.fieldsMap[field].value;
-
-          const currentAsyncValidator =
-            currentSnapshot.validatorsMap[field]?.[asyncValidatorName];
-
-          // Double-check the validator still exists and value hasn't changed
-          if (!currentAsyncValidator || !deepEqual(currentValue, value)) {
-            return;
-          }
-
-          // Create new abort controller for this validation
-          const abortController = new AbortController();
-          currentSnapshot.setAsyncAbortController(field, abortController);
-
-          const asyncValidationState = currentAsyncValidator({
-            value: currentValue,
-            meta: currentSnapshot.fieldsMap[field].meta,
-            validateUsingStandardSchema: () => {
-              if (!standardSchema) {
-                return;
-              }
-
-              return standardValidateAsync(standardSchema, currentValue);
-            },
-            signal: abortController.signal,
-          });
-
-          currentSnapshot.setValidationState(field, {
-            type: "validating",
-          });
-
-          asyncValidationState
-            .then((validationState) => {
-              // Only update if this validation wasn't aborted
-              const latestSnapshot = get();
-              if (
-                latestSnapshot.asyncTimeoutMap[field] === timeoutId &&
-                latestSnapshot.asyncAbortControllerMap[field] ===
-                  abortController
-              ) {
-                latestSnapshot.setValidationState(field, validationState);
-                latestSnapshot.clearAsyncTimeout(field);
-                latestSnapshot.setAsyncAbortController(field, null);
-              }
-            })
-            .catch((error: unknown) => {
-              // Only update if this validation wasn't aborted
-              const latestSnapshot = get();
-              if (
-                latestSnapshot.asyncTimeoutMap[field] === timeoutId &&
-                latestSnapshot.asyncAbortControllerMap[field] ===
-                  abortController
-              ) {
-                // Don't show error if validation was aborted
-                const isAbortError = error instanceof FieldAbortError;
-                if (!isAbortError) {
-                  latestSnapshot.setValidationState(field, {
-                    type: "error",
-                    message: "Async validation failed",
-                  });
-                }
-                latestSnapshot.clearAsyncTimeout(field);
-                latestSnapshot.setAsyncAbortController(field, null);
-              }
-            });
-        }, asyncDebounceMs);
-
-        // Store the timeout ID
         set((state) => {
           (state.asyncTimeoutMap as Record<keyof T, NodeJS.Timeout | null>)[
             field
           ] = timeoutId;
         });
       },
-      runSyncValidation: (
+
+      executeAsyncValidation: (
         field: keyof T,
-        action: "onBlur" | "onChange" | "onSubmit" | "onMount",
+        action: ValidationAction,
+        expectedValue: T[keyof T],
       ) => {
+        const currentSnapshot = get();
+        const asyncValidatorName: AsyncValidatorName<typeof action> =
+          `${action}Async`;
+
+        const currentValue = currentSnapshot.fieldsMap[field].value;
+        const asyncValidator =
+          currentSnapshot.validatorsMap[field]?.[asyncValidatorName];
+        const standardSchema = currentSnapshot.standardSchemaMap[field];
+
+        // Validate preconditions
+        if (!asyncValidator) {
+          return;
+        }
+
+        // Check if value changed since scheduling (stale validation)
+        if (!deepEqual(currentValue, expectedValue)) {
+          return;
+        }
+
+        // Create abort controller for this specific validation
+        const abortController = new AbortController();
+        currentSnapshot.setAsyncAbortController(field, abortController);
+
+        // Set validating state
+        currentSnapshot.setValidationState(field, {
+          type: "validating",
+        });
+
+        // Execute async validation
+        const validationPromise = asyncValidator({
+          value: currentValue,
+          meta: currentSnapshot.fieldsMap[field].meta,
+          validateUsingStandardSchema: () => {
+            if (!standardSchema) {
+              return;
+            }
+            return standardValidateAsync(standardSchema, currentValue);
+          },
+          signal: abortController.signal,
+        });
+
+        // Handle validation result
+        validationPromise
+          .then((validationState) => {
+            currentSnapshot.handleAsyncValidationResult(
+              field,
+              validationState,
+              abortController,
+              null,
+            );
+          })
+          .catch((error: unknown) => {
+            currentSnapshot.handleAsyncValidationResult(
+              field,
+              null,
+              abortController,
+              error,
+            );
+          });
+      },
+
+      handleAsyncValidationResult: (
+        field: keyof T,
+        validationState: AllowedValidationResult | null,
+        abortController: AbortController,
+        error: unknown,
+      ) => {
+        const latestSnapshot = get();
+
+        // Check if this validation is still current
+        const isCurrentValidation =
+          latestSnapshot.asyncAbortControllerMap[field] === abortController;
+
+        if (!isCurrentValidation) {
+          return; // This validation was superseded
+        }
+
+        // Clean up async validation state
+        latestSnapshot.setAsyncAbortController(field, null);
+        latestSnapshot.clearAsyncTimeout(field);
+
+        if (error) {
+          // Handle validation error
+          const isAbortError = error instanceof FieldAbortError;
+          if (!isAbortError) {
+            const errorMessage =
+              error instanceof Error
+                ? `Async validation failed: ${error.message}`
+                : "Async validation failed";
+
+            latestSnapshot.setValidationState(field, {
+              type: "error",
+              message: errorMessage,
+            });
+          }
+        } else if (validationState) {
+          // Handle successful validation
+          latestSnapshot.setValidationState(field, validationState);
+        }
+      },
+
+      // ========================================================================
+      // VALIDATION EXECUTION
+      // ========================================================================
+      runSyncValidation: (field: keyof T, action: ValidationAction) => {
         const snapshot = get();
         const validator = snapshot.validatorsMap[field]?.[action];
         const standardSchema = snapshot.standardSchemaMap[field];
-
         const value = snapshot.fieldsMap[field].value;
 
         const validationResult = validator?.({
@@ -487,7 +638,6 @@ function createFormStoreMutative<T extends DefaultValues>(
             if (!standardSchema) {
               return;
             }
-
             return standardValidate(standardSchema, value);
           },
         });
@@ -500,41 +650,14 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         return validationState;
       },
-      setValidationState: (
-        field: keyof T,
-        validationState?: ValidationResult,
-      ) => {
-        if (!validationState) {
-          return;
-        }
 
-        const previousValidationStateType =
-          get().fieldsMap[field].validationState.type;
-
-        set((state) => {
-          const fieldsMap = state.fieldsMap as FieldsMap<T>;
-          fieldsMap[field].validationState = validationState;
-        });
-
-        if (
-          (previousValidationStateType === "done") !==
-          (validationState.type === "done")
-        ) {
-          options.onDoneChange?.({
-            fieldsMap: get().fieldsMap,
-            changedFields: [field],
-          });
-        }
-      },
-      runValidation: (
-        field: keyof T,
-        action: "onBlur" | "onChange" | "onSubmit" | "onMount",
-      ) => {
+      runValidation: (field: keyof T, action: ValidationAction) => {
         const snapshot = get();
 
-        // Run sync validation
+        // Run sync validation first
         const validationState = snapshot.runSyncValidation(field, action);
 
+        // If sync validation failed or succeeded, abort async validation
         if (
           validationState?.type === "error" ||
           validationState?.type === "done"
@@ -546,17 +669,28 @@ function createFormStoreMutative<T extends DefaultValues>(
           return;
         }
 
-        // Schedule async validation if needed
+        // Schedule async validation if sync validation didn't conclude
         snapshot.scheduleAsyncValidation(field, action);
       },
     })),
   );
 }
 
+// ============================================================================
+// CONTEXT
+// ============================================================================
+
 const FormContext = createContext<StoreApi<
   Store<DefaultValues> & Actions<DefaultValues>
 > | null>(null);
 
+// ============================================================================
+// COMPONENTS
+// ============================================================================
+
+/**
+ * Form provider component that provides the form store to child components
+ */
 function FormProvider({
   children,
   formStore,
@@ -567,18 +701,28 @@ function FormProvider({
   return <FormContext value={formStore}>{children}</FormContext>;
 }
 
+/**
+ * Field component that renders a field using the provided render prop
+ */
 function Field<T extends DefaultValues, K extends keyof T>(
   props: FieldProps<T, K>,
 ) {
-  const field = useField<T, K>({
+  const fieldApi = useField<T, K>({
     name: props.name,
     validators: props.validators,
     asyncDebounce: props.asyncDebounce,
   });
 
-  return props.render(field);
+  return props.render(fieldApi);
 }
 
+// ============================================================================
+// HOOKS
+// ============================================================================
+
+/**
+ * Hook to access and manage a specific form field
+ */
 function useField<T extends DefaultValues, K extends keyof T>(
   options: UseFieldOptions<T, K>,
 ): FieldApi<T, K> {
@@ -590,10 +734,13 @@ function useField<T extends DefaultValues, K extends keyof T>(
 
   const isMountedRef = useRef(false);
 
+  // Subscribe to field state
   const field = useStore(
     formStore,
     useShallow((state: Store<T>) => state.fieldsMap[options.name]),
   );
+
+  // Subscribe to actions
   const setValue = useStore(formStore, (state) => state.setValue);
   const submit = useStore(formStore, (state) => state.submit);
   const runValidation = useStore(formStore, (state) => state.runValidation);
@@ -602,6 +749,7 @@ function useField<T extends DefaultValues, K extends keyof T>(
     (state) => state.abortAsyncValidation,
   );
 
+  // Create field handlers
   const handleChange = (value: T[K]) => {
     setValue(options.name, value);
   };
@@ -610,16 +758,18 @@ function useField<T extends DefaultValues, K extends keyof T>(
     submit([options.name]);
   };
 
+  const handleBlur = () => {
+    runValidation(options.name, "onBlur");
+  };
+
+  // Create form API
   const formApi: FormApi<T> = {
     submit: (fields?: readonly (keyof T)[]) => {
       submit(fields);
     },
   };
 
-  const handleBlur = () => {
-    runValidation(options.name, "onBlur");
-  };
-
+  // Sync async debounce setting
   useIsomorphicEffect(() => {
     const currentDebounce = formStore.getState().asyncDebounceMap[options.name];
     const newDebounce = options.asyncDebounce ?? DEFAULT_ASYNC_DEBOUNCE;
@@ -628,6 +778,16 @@ function useField<T extends DefaultValues, K extends keyof T>(
     }
   }, [formStore, options.asyncDebounce, options.name]);
 
+  // Sync validators
+  useIsomorphicEffect(() => {
+    const currentValidators = formStore.getState().validatorsMap[options.name];
+    const newValidators = options.validators;
+    if (currentValidators !== newValidators) {
+      formStore.getState().setValidators(options.name, newValidators);
+    }
+  }, [formStore, options.name, options.validators]);
+
+  // Sync standard schema
   useIsomorphicEffect(() => {
     const currentStandardSchema =
       formStore.getState().standardSchemaMap[options.name];
@@ -640,18 +800,18 @@ function useField<T extends DefaultValues, K extends keyof T>(
     }
   }, [formStore, options.name, options.standardSchema]);
 
+  // Run mount validation
   useIsomorphicEffect(() => {
-    // Don't run validation if field is already validating
+    // Don't run validation if field is already validating or not ready
     if (isMountedRef.current || field.value === undefined) {
       return;
     }
 
     isMountedRef.current = true;
-
     runValidation(options.name, "onMount");
   }, [field.validationState.type, field.value, options.name, runValidation]);
 
-  // Cleanup timeout and abort controller on unmount
+  // Cleanup on unmount
   useIsomorphicEffect(() => {
     return () => {
       abortAsyncValidation(options.name, "Field unmounted");
@@ -670,11 +830,15 @@ function useField<T extends DefaultValues, K extends keyof T>(
   };
 }
 
+/**
+ * Main hook to create and manage a form
+ */
 export function useForm<T extends DefaultValues>(
   options: UseFormOptions<T>,
 ): UseFormResult<T> {
   const [formStore] = useState(() => createFormStoreMutative(options));
 
+  // Sync default values when they change
   useIsomorphicEffect(() => {
     if (!deepEqual(options.defaultValues, formStore.getState().defaultValues)) {
       formStore.getState().setDefaultValues(options.defaultValues);
@@ -696,6 +860,9 @@ export function useForm<T extends DefaultValues>(
   };
 }
 
+/**
+ * Factory function to create typed form hooks
+ */
 export function createFormHook<
   T extends DefaultValues,
 >(): CreateFormHookResult<T> {
