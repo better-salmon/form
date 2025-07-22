@@ -45,12 +45,12 @@ function App() {
       email: "john.doe@example.com",
       phone,
     },
-    onDoneChange: ({ fieldsMap, changedFields }) => {
-      console.log(
-        "onDoneChange",
-        changedFields.map((field) => fieldsMap[field].validationState.type),
-      );
-    },
+    // onDoneChange: ({ fieldsMap, changedFields }) => {
+    //   console.log(
+    //     "onDoneChange",
+    //     changedFields.map((field) => fieldsMap[field].validationState.type),
+    //   );
+    // },
   });
 
   return (

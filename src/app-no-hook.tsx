@@ -42,12 +42,12 @@ function App() {
       email: "john.doe@example.com",
       phone,
     },
-    onDoneChange: ({ fieldsMap, changedFields }) => {
-      console.log(
-        "onDoneChange",
-        changedFields.map((field) => fieldsMap[field].validationState.type),
-      );
-    },
+    // onDoneChange: ({ fieldsMap, changedFields }) => {
+    //   console.log(
+    //     "onDoneChange",
+    //     changedFields.map((field) => fieldsMap[field].validationState.type),
+    //   );
+    // },
   });
 
   return (
@@ -61,7 +61,7 @@ function App() {
       <h3 className="text-2xl font-bold">All in one file</h3>
       <Field
         name="name"
-        validators={{}}
+        // validators={{}}
         render={(field) => (
           <label className="flex flex-col gap-2">
             <span className="px-2 text-sm font-medium">Name</span>
@@ -71,9 +71,9 @@ function App() {
                 name={field.name}
                 value={field.value.firstName}
                 onBlur={field.handleBlur}
-                data-done={
-                  field.validationState.type === "done" ? "true" : "false"
-                }
+                // data-done={
+                //   field.validationState.type === "done" ? "true" : "false"
+                // }
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -89,29 +89,29 @@ function App() {
                 }}
                 className={cn(
                   "rounded-md border-2 border-gray-300 p-2 pr-10 outline-none",
-                  {
-                    "border-red-500": field.validationState.type === "error",
-                    "border-green-500": field.validationState.type === "done",
-                    "border-blue-500":
-                      field.validationState.type === "validating",
-                    "border-yellow-500":
-                      field.validationState.type === "debouncing",
-                  },
+                  // {
+                  //   "border-red-500": field.validationState.type === "error",
+                  //   "border-green-500": field.validationState.type === "done",
+                  //   "border-blue-500":
+                  //     field.validationState.type === "validating",
+                  //   "border-yellow-500":
+                  //     field.validationState.type === "debouncing",
+                  // },
                 )}
               />
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+              {/* <div className="absolute inset-y-0 right-0 flex items-center pr-3">
                 {field.validationState.type === "validating" && <span>🤔</span>}
                 {field.validationState.type === "done" && <span>✅</span>}
                 {field.validationState.type === "error" && <span>❌</span>}
                 {field.validationState.type === "debouncing" && <span>⏰</span>}
-              </div>
+              </div> */}
             </div>
           </label>
         )}
       />
       <Field
         name="email"
-        validators={{}}
+        // validators={{}}
         render={(field) => (
           <label className="flex flex-col gap-2">
             <span className="px-2 text-sm font-medium">Email</span>
@@ -119,9 +119,9 @@ function App() {
               <input
                 type="email"
                 name={field.name}
-                data-done={
-                  field.validationState.type === "done" ? "true" : "false"
-                }
+                // data-done={
+                //   field.validationState.type === "done" ? "true" : "false"
+                // }
                 value={field.value}
                 onChange={(e) => {
                   field.handleChange(e.target.value);
@@ -135,29 +135,29 @@ function App() {
                 }}
                 className={cn(
                   "rounded-md border-2 border-gray-300 p-2 pr-10 outline-none",
-                  {
-                    "border-red-500": field.validationState.type === "error",
-                    "border-green-500": field.validationState.type === "done",
-                    "border-blue-500":
-                      field.validationState.type === "validating",
-                    "border-yellow-500":
-                      field.validationState.type === "debouncing",
-                  },
+                  // {
+                  //   "border-red-500": field.validationState.type === "error",
+                  //   "border-green-500": field.validationState.type === "done",
+                  //   "border-blue-500":
+                  //     field.validationState.type === "validating",
+                  //   "border-yellow-500":
+                  //     field.validationState.type === "debouncing",
+                  // },
                 )}
               />
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+              {/* <div className="absolute inset-y-0 right-0 flex items-center pr-3">
                 {field.validationState.type === "validating" && <span>🤔</span>}
                 {field.validationState.type === "done" && <span>✅</span>}
                 {field.validationState.type === "error" && <span>❌</span>}
                 {field.validationState.type === "debouncing" && <span>⏰</span>}
-              </div>
+              </div> */}
             </div>
           </label>
         )}
       />
       <Field
         name="phone"
-        validators={{}}
+        // validators={{}}
         render={(field) => (
           <label className="flex flex-col gap-2">
             <span className="px-2 text-sm font-medium">Phone</span>
@@ -168,9 +168,9 @@ function App() {
                 name={field.name}
                 value={field.value ?? ""}
                 disabled={field.value === undefined}
-                data-done={
-                  field.validationState.type === "done" ? "true" : "false"
-                }
+                // data-done={
+                //   field.validationState.type === "done" ? "true" : "false"
+                // }
                 onChange={(e) => {
                   field.handleChange(e.target.value);
                 }}
@@ -183,23 +183,23 @@ function App() {
                 }}
                 className={cn(
                   "rounded-md border-2 border-gray-300 p-2 pr-10 outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500",
-                  {
-                    "border-red-500": field.validationState.type === "error",
-                    "border-green-500": field.validationState.type === "done",
-                    "border-blue-500":
-                      field.validationState.type === "validating",
-                    "border-yellow-500":
-                      field.validationState.type === "debouncing",
-                  },
+                  // {
+                  //   "border-red-500": field.validationState.type === "error",
+                  //   "border-green-500": field.validationState.type === "done",
+                  //   "border-blue-500":
+                  //     field.validationState.type === "validating",
+                  //   "border-yellow-500":
+                  //     field.validationState.type === "debouncing",
+                  // },
                 )}
               />
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+              {/* <div className="absolute inset-y-0 right-0 flex items-center pr-3">
                 {field.value === undefined && <span>🙈</span>}
                 {field.validationState.type === "validating" && <span>🤔</span>}
                 {field.validationState.type === "done" && <span>✅</span>}
                 {field.validationState.type === "error" && <span>❌</span>}
                 {field.validationState.type === "debouncing" && <span>⏰</span>}
-              </div>
+              </div> */}
             </div>
           </label>
         )}
