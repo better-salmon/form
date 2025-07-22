@@ -13,7 +13,6 @@ export function Email() {
         <input
           type="email"
           name={field.name}
-          // data-done={field.validationState.type === "done" ? "true" : "false"}
           value={field.value}
           onBlur={field.handleBlur}
           onChange={(e) => {

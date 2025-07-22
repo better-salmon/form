@@ -62,7 +62,6 @@ export function Name() {
           name={field.name}
           value={field.value.firstName}
           onBlur={field.handleBlur}
-          // data-done={field.validationState.type === "done" ? "true" : "false"}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
