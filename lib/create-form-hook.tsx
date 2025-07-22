@@ -324,405 +324,440 @@ function createFormStoreMutative<T extends DefaultValues>(
   options: UseFormOptions<T>,
 ) {
   return createStore<Store<T> & Actions<T>>()(
-    mutative((set, get) => ({
+    mutative((set, get) => {
       // ========================================================================
-      // STORE STATE
+      // TYPED HELPER FUNCTIONS FOR CLEAN MUTATIONS
       // ========================================================================
-      defaultValues: options.defaultValues,
-      fieldsMap: createInitialFieldsMap(options.defaultValues),
-      validatorsMap: {},
-      runningValidations: {},
-      debounceDelayMs: 500,
-      lastValidatedFields: {},
-      validationIds: Object.fromEntries(
-        Object.keys(options.defaultValues).map((field) => [field, 0]),
-      ) as ValidationIdsMap<T>,
 
-      // ========================================================================
-      // CONFIGURATION ACTIONS
-      // ========================================================================
-      setDefaultValues: (defaultValues) => {
+      /** Gets typed fields map from state */
+      const getFields = () => get().fieldsMap;
+
+      /** Gets typed validators map from state */
+      const getValidators = () => get().validatorsMap;
+
+      /** Gets typed running validations from state */
+      const getRunningValidations = () => get().runningValidations;
+
+      /** Gets typed validation IDs from state */
+      const getValidationIds = () => get().validationIds;
+
+      /** Mutates fields map with type safety */
+      const mutateFields = (mutator: (fields: FieldsMap<T>) => void) => {
         set((state) => {
-          (state.defaultValues as T) = defaultValues;
-
-          for (const [field] of Object.entries(defaultValues)) {
-            (state.fieldsMap as FieldsMap<T>)[field as keyof T].value ??=
-              defaultValues[field as keyof T];
-          }
+          mutator(state.fieldsMap as FieldsMap<T>);
         });
-      },
+      };
 
-      setValidatorsMap: (field, validators) => {
+      /** Mutates validators map with type safety */
+      const mutateValidators = (
+        mutator: (validators: ValidatorsMap<T>) => void,
+      ) => {
         set((state) => {
-          (state.validatorsMap as ValidatorsMap<T>)[field] = validators;
+          mutator(state.validatorsMap as ValidatorsMap<T>);
         });
-      },
+      };
 
-      // ========================================================================
-      // VALUE ACTIONS
-      // ========================================================================
-      setValue: (field, value) => {
+      /** Mutates running validations with type safety */
+      const mutateRunningValidations = (
+        mutator: (validations: RunningValidationsMap<T>) => void,
+      ) => {
         set((state) => {
-          const fieldsMap = state.fieldsMap as FieldsMap<T>;
-          if (deepEqual(fieldsMap[field].value, value)) {
+          mutator(state.runningValidations as RunningValidationsMap<T>);
+        });
+      };
+
+      /** Mutates validation IDs with type safety */
+      const mutateValidationIds = (
+        mutator: (ids: ValidationIdsMap<T>) => void,
+      ) => {
+        set((state) => {
+          mutator(state.validationIds as ValidationIdsMap<T>);
+        });
+      };
+
+      /** Sets field validation state */
+      const setFieldState = (field: keyof T, state: FieldState) => {
+        mutateFields((fields) => {
+          fields[field].validationState = state;
+        });
+      };
+
+      return {
+        // ======================================================================
+        // INITIAL STATE
+        // ======================================================================
+        defaultValues: options.defaultValues,
+        fieldsMap: createInitialFieldsMap(options.defaultValues),
+        validatorsMap: {},
+        runningValidations: {},
+        debounceDelayMs: 500,
+        lastValidatedFields: {},
+        validationIds: Object.fromEntries(
+          Object.keys(options.defaultValues).map((field) => [field, 0]),
+        ) as ValidationIdsMap<T>,
+
+        // ======================================================================
+        // CONFIGURATION ACTIONS
+        // ======================================================================
+
+        /** Updates default values and syncs existing field values */
+        setDefaultValues: (defaultValues) => {
+          set((state) => {
+            // Use Object.assign for proper draft mutation
+            Object.assign(state.defaultValues, defaultValues);
+            const fields = state.fieldsMap as FieldsMap<T>;
+
+            for (const [field] of Object.entries(defaultValues)) {
+              fields[field as keyof T].value ??=
+                defaultValues[field as keyof T];
+            }
+          });
+        },
+
+        /** Sets validators for a specific field */
+        setValidatorsMap: (field, validators) => {
+          mutateValidators((validatorsMap) => {
+            validatorsMap[field] = validators;
+          });
+        },
+
+        // ======================================================================
+        // FIELD VALUE ACTIONS
+        // ======================================================================
+
+        /** Updates field value and triggers validation */
+        setValue: (field, value) => {
+          const fields = getFields();
+
+          // Skip if value hasn't changed
+          if (deepEqual(fields[field].value, value)) {
             return;
           }
 
-          fieldsMap[field].value = value;
-          fieldsMap[field].meta.isTouched = true;
-          fieldsMap[field].meta.numberOfChanges++;
-        });
-
-        // Trigger validation after value change
-        get().validate(field, "change");
-      },
-
-      submit: (fields) => {
-        const snapshot = get();
-        const fieldsToSubmit = new Set(
-          fields ?? getFieldNames(snapshot.fieldsMap),
-        );
-
-        for (const field of fieldsToSubmit) {
-          set((state) => {
-            const fieldsMap = state.fieldsMap as FieldsMap<T>;
-            fieldsMap[field].meta.numberOfSubmissions++;
+          // Update field value and metadata
+          mutateFields((fields) => {
+            fields[field].value = value;
+            fields[field].meta.isTouched = true;
+            fields[field].meta.numberOfChanges++;
           });
 
-          get().validate(field, "submit");
-        }
-      },
+          // Trigger validation after value change
+          get().validate(field, "change");
+        },
 
-      // ========================================================================
-      // VALIDATION ACTIONS
-      // ========================================================================
+        /** Submits specified fields (or all fields if none specified) */
+        submit: (fields) => {
+          const fieldsMap = getFields();
+          const fieldsToSubmit = new Set(fields ?? getFieldNames(fieldsMap));
 
-      /**
-       * Cleans up all validation resources for a field (timeouts and abort controllers)
-       */
-      cleanupValidation: (field) => {
-        const snapshot = get();
-        const runningValidation = snapshot.runningValidations[field];
-
-        if (!runningValidation) {
-          return;
-        }
-
-        // Clear timeout if exists
-        if (runningValidation.timeoutId) {
-          clearTimeout(runningValidation.timeoutId);
-        }
-
-        // Abort the async operation
-        runningValidation.abortController.abort();
-
-        // Remove from running validations
-        set((state) => {
-          const runningValidationsMap =
-            state.runningValidations as RunningValidationsMap<T>;
-          runningValidationsMap[field] = undefined;
-        });
-      },
-
-      /**
-       * Increments the validation ID for a field and returns the new ID
-       */
-      incrementValidationId: (field) => {
-        const currentId = get().validationIds[field];
-        const newId = currentId + 1;
-        set((state) => {
-          const validationIds = state.validationIds as ValidationIdsMap<T>;
-          validationIds[field] = newId;
-        });
-        return newId;
-      },
-
-      /**
-       * Schedules validation for a field (starts debouncing phase)
-       */
-      scheduleValidation: (field, value, validator, debounceMs, action) => {
-        // Cancel any existing validation first
-        get().cleanupValidation(field);
-
-        // Increment validation ID for this field
-        const validationId = get().incrementValidationId(field);
-
-        // Create new abort controller
-        const abortController = new AbortController();
-
-        // Set field state to waiting
-        set((state) => {
-          const fieldsMap = state.fieldsMap as FieldsMap<T>;
-          fieldsMap[field].validationState = { type: "waiting" };
-        });
-
-        // Set up debounce timeout
-        const timeoutId = setTimeout(() => {
-          // Clear timeout from running validation
-          set((state) => {
-            const runningValidationsMap =
-              state.runningValidations as RunningValidationsMap<T>;
-            const existing = runningValidationsMap[field];
-            if (existing) {
-              existing.timeoutId = undefined;
-            }
-          });
-
-          // Start actual validation
-          get().runValidation(field, value, validator, action);
-        }, debounceMs);
-
-        // Store the running validation with timeout
-        set((state) => {
-          const runningValidationsMap =
-            state.runningValidations as RunningValidationsMap<T>;
-          runningValidationsMap[field] = {
-            stateSnapshot: value,
-            abortController,
-            timeoutId,
-            validationId,
-          } satisfies RunningValidation<T[typeof field]>;
-        });
-      },
-
-      /**
-       * Runs validation for a field (actual async validation phase)
-       */
-      runValidation: (field, value, validator, action) => {
-        // Abort any existing validation for this field
-        get().cleanupValidation(field);
-
-        // Increment validation ID for this field
-        const validationId = get().incrementValidationId(field);
-
-        // Create new abort controller
-        const abortController = new AbortController();
-
-        // Store the running validation
-        set((state) => {
-          const runningValidationsMap =
-            state.runningValidations as RunningValidationsMap<T>;
-          const fieldsMap = state.fieldsMap as FieldsMap<T>;
-          const lastValidatedFields =
-            state.lastValidatedFields as LastValidatedFieldsMap<T>;
-
-          runningValidationsMap[field] = {
-            stateSnapshot: value,
-            abortController,
-            timeoutId: undefined,
-            validationId,
-          } satisfies RunningValidation<T[typeof field]>;
-
-          // Set field state to checking and store the value being validated
-          fieldsMap[field].validationState = { type: "checking" };
-          lastValidatedFields[field] = value;
-        });
-
-        // Run async validation in a separate async context
-        validator({
-          action: action,
-          value,
-          signal: abortController.signal,
-        })
-          .then((result) => {
-            // Check if validation was aborted
-            if (abortController.signal.aborted) {
-              return;
-            }
-
-            // Check if this validation is still current by comparing validation IDs
-            const currentValidationId = get().validationIds[field];
-            if (validationId !== currentValidationId) {
-              // This validation is stale, discard the result
-              return;
-            }
-
-            // Update field state with result
-            set((state) => {
-              const fieldsMap = state.fieldsMap as FieldsMap<T>;
-              fieldsMap[field].validationState = result;
+          // Update submission metadata and trigger validation for each field
+          for (const field of fieldsToSubmit) {
+            mutateFields((fields) => {
+              fields[field].meta.numberOfSubmissions++;
             });
 
-            // Clean up validation resources
-            get().cleanupValidation(field);
+            get().validate(field, "submit");
+          }
+        },
+
+        // ======================================================================
+        // VALIDATION LIFECYCLE ACTIONS
+        // ======================================================================
+
+        /** Cleans up all validation resources for a field */
+        cleanupValidation: (field) => {
+          const runningValidation = getRunningValidations()[field];
+
+          if (!runningValidation) {
+            return;
+          }
+
+          // Clear timeout if exists
+          if (runningValidation.timeoutId) {
+            clearTimeout(runningValidation.timeoutId);
+          }
+
+          // Abort the async operation
+          runningValidation.abortController.abort();
+
+          // Remove from running validations
+          mutateRunningValidations((validations) => {
+            validations[field] = undefined;
+          });
+        },
+
+        /** Increments validation ID for a field and returns the new ID */
+        incrementValidationId: (field) => {
+          const currentId = getValidationIds()[field];
+          const newId = currentId + 1;
+
+          mutateValidationIds((ids) => {
+            ids[field] = newId;
+          });
+
+          return newId;
+        },
+
+        /** Schedules debounced validation for a field */
+        scheduleValidation: (field, value, validator, debounceMs, action) => {
+          // Cancel any existing validation first
+          get().cleanupValidation(field);
+
+          // Increment validation ID for this field
+          const validationId = get().incrementValidationId(field);
+
+          // Create new abort controller
+          const abortController = new AbortController();
+
+          // Set field state to waiting
+          setFieldState(field, { type: "waiting" });
+
+          // Set up debounce timeout
+          const timeoutId = setTimeout(() => {
+            // Clear timeout from running validation
+            mutateRunningValidations((validations) => {
+              const existing = validations[field];
+              if (existing) {
+                existing.timeoutId = undefined;
+              }
+            });
+
+            // Start actual validation
+            get().runValidation(field, value, validator, action);
+          }, debounceMs);
+
+          // Store the running validation with timeout
+          mutateRunningValidations((validations) => {
+            validations[field] = {
+              stateSnapshot: value,
+              abortController,
+              timeoutId,
+              validationId,
+            } satisfies RunningValidation<T[typeof field]>;
+          });
+        },
+
+        /** Runs async validation for a field */
+        runValidation: (field, value, validator, action) => {
+          // Abort any existing validation for this field
+          get().cleanupValidation(field);
+
+          // Increment validation ID for this field
+          const validationId = get().incrementValidationId(field);
+
+          // Create new abort controller
+          const abortController = new AbortController();
+
+          // Store the running validation and update field state
+          set((state) => {
+            const validations =
+              state.runningValidations as RunningValidationsMap<T>;
+            const fields = state.fieldsMap as FieldsMap<T>;
+            const lastValidated =
+              state.lastValidatedFields as LastValidatedFieldsMap<T>;
+
+            validations[field] = {
+              stateSnapshot: value,
+              abortController,
+              timeoutId: undefined,
+              validationId,
+            } satisfies RunningValidation<T[typeof field]>;
+
+            // Set field state to checking and store the value being validated
+            fields[field].validationState = { type: "checking" };
+            lastValidated[field] = value;
+          });
+
+          // Run async validation
+          validator({
+            action: action,
+            value,
+            signal: abortController.signal,
           })
-          .catch((error: unknown) => {
-            // Check if validation was aborted
-            if (abortController.signal.aborted) {
-              return;
-            }
+            .then((result) => {
+              // Check if validation was aborted or is stale
+              if (abortController.signal.aborted) {
+                return;
+              }
 
-            // Check if this validation is still current by comparing validation IDs
-            const currentValidationId = get().validationIds[field];
-            if (validationId !== currentValidationId) {
-              // This validation is stale, discard the result
-              return;
-            }
+              const currentValidationId = getValidationIds()[field];
+              if (validationId !== currentValidationId) {
+                return;
+              }
 
-            // Handle validation error
-            set((state) => {
-              const fieldsMap = state.fieldsMap as FieldsMap<T>;
-              fieldsMap[field].validationState = {
+              // Update field state with result
+              setFieldState(field, result);
+              get().cleanupValidation(field);
+            })
+            .catch((error: unknown) => {
+              // Check if validation was aborted or is stale
+              if (abortController.signal.aborted) {
+                return;
+              }
+
+              const currentValidationId = getValidationIds()[field];
+              if (validationId !== currentValidationId) {
+                return;
+              }
+
+              // Handle validation error
+              setFieldState(field, {
                 type: "invalid",
                 message:
                   error instanceof Error ? error.message : "Validation failed",
-              };
+              });
+
+              get().cleanupValidation(field);
             });
+        },
 
-            // Clean up validation resources
-            get().cleanupValidation(field);
-          });
-      },
+        // ======================================================================
+        // VALIDATION TRIGGER ACTIONS
+        // ======================================================================
 
-      startAsyncValidation: (field, value, validator, action) => {
-        get().runValidation(field, value, validator, action);
-      },
+        /** Starts immediate async validation (no debounce) */
+        startAsyncValidation: (field, value, validator, action) => {
+          get().runValidation(field, value, validator, action);
+        },
 
-      startDebouncedAsyncValidation: (
-        field,
-        value,
-        validator,
-        debounceMs,
-        action,
-      ) => {
-        get().scheduleValidation(field, value, validator, debounceMs, action);
-      },
-
-      validate: (field, action) => {
-        const {
-          fieldsMap,
-          validatorsMap,
-          runningValidations,
-          debounceDelayMs,
-          lastValidatedFields,
-        } = get();
-
-        const currentField = fieldsMap[field];
-        const validators = validatorsMap[field];
-
-        if (!validators) {
-          return;
-        }
-
-        const validatorResult = validators.validator?.({
+        /** Starts debounced async validation */
+        startDebouncedAsyncValidation: (
+          field,
+          value,
+          validator,
+          debounceMs,
           action,
-          value: currentField.value,
-        });
+        ) => {
+          get().scheduleValidation(field, value, validator, debounceMs, action);
+        },
 
-        const resultOrTrigger = validatorResult ?? {
-          type: "skip",
-        };
+        /** Main validation orchestrator - handles sync validation and triggers async validation */
+        validate: (field, action) => {
+          const fieldsMap = getFields();
+          const validatorsMap = getValidators();
+          const runningValidations = getRunningValidations();
+          const { debounceDelayMs, lastValidatedFields } = get();
 
-        switch (resultOrTrigger.type) {
-          case "skip": {
-            const runningValidation = runningValidations[field];
+          const currentField = fieldsMap[field];
+          const validators = validatorsMap[field];
 
-            if (runningValidation) {
-              // Validation is already running, do nothing
-              return;
+          if (!validators) {
+            return;
+          }
+
+          // Run sync validator if it exists
+          const validatorResult = validators.validator?.({
+            action,
+            value: currentField.value,
+          });
+
+          const resultOrTrigger = validatorResult ?? { type: "skip" };
+
+          switch (resultOrTrigger.type) {
+            case "skip": {
+              const runningValidation = runningValidations[field];
+              if (runningValidation) {
+                // Validation is already running, do nothing
+                return;
+              }
+              // No running validation, keep current state and never run async validation
+              break;
             }
 
-            // No running validation, keep current state and never run async validation
-            break;
-          }
-          case "auto": {
-            const runningValidation = runningValidations[field];
+            case "auto": {
+              const runningValidation = runningValidations[field];
 
-            if (runningValidation) {
-              // Check if value has changed since validation started
-              if (
-                deepEqual(runningValidation.stateSnapshot, currentField.value)
-              ) {
-                // Value hasn't changed, continue running existing validation
-                return;
+              if (runningValidation) {
+                // Check if value has changed since validation started
+                if (
+                  deepEqual(runningValidation.stateSnapshot, currentField.value)
+                ) {
+                  // Value hasn't changed, continue running existing validation
+                  return;
+                } else {
+                  // Value changed, restart validation from the beginning
+                  get().cleanupValidation(field);
+                }
               } else {
-                // Value changed, restart validation from the beginning
-                get().cleanupValidation(field);
+                // No running validation - check if value changed from last validated value
+                if (
+                  (lastValidatedFields[field] !== undefined &&
+                    deepEqual(
+                      lastValidatedFields[field],
+                      currentField.value,
+                    )) ||
+                  currentField.validationState.type === "valid" ||
+                  currentField.validationState.type === "invalid"
+                ) {
+                  // Value hasn't changed from last validation, skip
+                  return;
+                }
               }
-            } else {
-              // No running validation - check if value changed from last validated value
 
-              if (
-                (lastValidatedFields[field] !== undefined &&
-                  deepEqual(lastValidatedFields[field], currentField.value)) ||
-                currentField.validationState.type === "valid" ||
-                currentField.validationState.type === "invalid"
-              ) {
-                // Value hasn't changed from last validation, skip
-                return;
+              // Start scheduled async validation if async validator exists
+              if (validators.asyncValidator) {
+                const fieldDebounce = validators.debounce ?? debounceDelayMs;
+                get().scheduleValidation(
+                  field,
+                  currentField.value,
+                  validators.asyncValidator,
+                  fieldDebounce,
+                  action,
+                );
               }
+              break;
             }
 
-            // Start scheduled async validation if async validator exists
-            if (validators.asyncValidator) {
-              const fieldDebounce = validators.debounce ?? debounceDelayMs;
-              get().scheduleValidation(
-                field,
-                currentField.value,
-                validators.asyncValidator,
-                fieldDebounce,
-                action,
-              );
-            }
-            break;
-          }
-          case "force": {
-            // Cancel existing validation and restart from the beginning
-            get().cleanupValidation(field);
+            case "force": {
+              // Cancel existing validation and restart from the beginning
+              get().cleanupValidation(field);
 
-            if (validators.asyncValidator) {
-              const fieldDebounce = validators.debounce ?? debounceDelayMs;
-              get().scheduleValidation(
-                field,
-                currentField.value,
-                validators.asyncValidator,
-                fieldDebounce,
-                action,
-              );
+              if (validators.asyncValidator) {
+                const fieldDebounce = validators.debounce ?? debounceDelayMs;
+                get().scheduleValidation(
+                  field,
+                  currentField.value,
+                  validators.asyncValidator,
+                  fieldDebounce,
+                  action,
+                );
+              }
+              break;
             }
-            break;
-          }
-          case "valid": {
-            set((state) => {
-              const fieldsMap = state.fieldsMap as FieldsMap<T>;
-              fieldsMap[field].validationState = { type: "valid" };
-            });
-            get().cleanupValidation(field);
-            break;
-          }
-          case "invalid": {
-            set((state) => {
-              const fieldsMap = state.fieldsMap as FieldsMap<T>;
-              fieldsMap[field].validationState = {
+
+            case "valid": {
+              setFieldState(field, { type: "valid" });
+              get().cleanupValidation(field);
+              break;
+            }
+
+            case "invalid": {
+              setFieldState(field, {
                 type: "invalid",
                 message: resultOrTrigger.message,
-              };
-            });
-            get().cleanupValidation(field);
-            break;
-          }
-          case "warning": {
-            set((state) => {
-              const fieldsMap = state.fieldsMap as FieldsMap<T>;
-              fieldsMap[field].validationState = {
+              });
+              get().cleanupValidation(field);
+              break;
+            }
+
+            case "warning": {
+              setFieldState(field, {
                 type: "warning",
                 message: resultOrTrigger.message,
-              };
-            });
-            get().cleanupValidation(field);
-            break;
+              });
+              get().cleanupValidation(field);
+              break;
+            }
+
+            case "pending": {
+              setFieldState(field, { type: "pending" });
+              get().cleanupValidation(field);
+              break;
+            }
           }
-          case "pending": {
-            set((state) => {
-              const fieldsMap = state.fieldsMap as FieldsMap<T>;
-              fieldsMap[field].validationState = { type: "pending" };
-            });
-            get().cleanupValidation(field);
-            break;
-          }
-        }
-      },
-    })),
+        },
+      };
+    }),
   );
 }
 
