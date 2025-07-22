@@ -48,26 +48,6 @@ export function Name() {
           type: "done",
         };
       },
-      onChange: () => {
-        return {
-          type: "idle",
-        };
-      },
-      onChangeAsync: async (props) => {
-        const isValid = await isNameValid(props.value.firstName, props.signal);
-
-        if (!isValid) {
-          return {
-            type: "error",
-            message: "Failed to fetch",
-          };
-        }
-
-        return {
-          type: "done",
-        };
-      },
-      onChangeAsyncDebounce: 1000,
     },
   });
 
