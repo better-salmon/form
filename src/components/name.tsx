@@ -11,8 +11,8 @@ export function Name() {
   const field = useField({
     name: "name",
     debounce: 1000,
-    synchronousValidator: (props) => {
-      console.log("synchronousValidator", props);
+    validator: (props) => {
+      console.log("validator", props);
       switch (props.action) {
         case "change": {
           if (props.value.firstName.length > 10) {
@@ -37,8 +37,8 @@ export function Name() {
         }
       }
     },
-    asynchronousValidator: async (props) => {
-      console.log("asynchronousValidator", props);
+    asyncValidator: async (props) => {
+      console.log("asyncValidator", props);
       await fetch(
         `http://localhost:3001/ok?delay=1000&value=${props.value.firstName}`,
         {
