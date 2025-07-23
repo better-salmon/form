@@ -156,6 +156,10 @@ export type LastValidatedFieldsMap<T extends DefaultValues> = {
   [K in keyof T]?: T[K];
 };
 
+export type LastValidatedNumberOfChangesMap<T extends DefaultValues> = {
+  [K in keyof T]?: number;
+};
+
 export type FieldEntries<T extends DefaultValues> = {
   [K in keyof T]: [K, T[K]];
 }[keyof T][];
@@ -194,6 +198,7 @@ export interface Store<T extends DefaultValues> {
   runningValidations: RunningValidationsMap<T>;
   debounceDelayMs: number;
   lastValidatedFields: LastValidatedFieldsMap<T>;
+  lastValidatedNumberOfChanges: LastValidatedNumberOfChangesMap<T>;
   validationIds: ValidationIdsMap<T>;
 }
 
@@ -412,6 +417,7 @@ function createFormStoreMutative<T extends DefaultValues>(
         runningValidations: {},
         debounceDelayMs: 500,
         lastValidatedFields: {},
+        lastValidatedNumberOfChanges: {},
         validationIds: Object.fromEntries(
           Object.keys(options.defaultValues).map((field) => [field, 0]),
         ) as ValidationIdsMap<T>,
@@ -575,6 +581,8 @@ function createFormStoreMutative<T extends DefaultValues>(
             const fields = state.fieldsMap as FieldsMap<T>;
             const lastValidated =
               state.lastValidatedFields as LastValidatedFieldsMap<T>;
+            const lastValidatedNumberOfChanges =
+              state.lastValidatedNumberOfChanges as LastValidatedNumberOfChangesMap<T>;
 
             validations[field] = {
               stateSnapshot: value,
@@ -586,6 +594,8 @@ function createFormStoreMutative<T extends DefaultValues>(
             // Set field state to checking and store the value being validated
             fields[field].validationState = { type: "checking" };
             lastValidated[field] = value;
+            lastValidatedNumberOfChanges[field] =
+              fields[field].meta.numberOfChanges;
           });
 
           // Run async validation
@@ -706,17 +716,21 @@ function createFormStoreMutative<T extends DefaultValues>(
                     get().cleanupValidation(field);
                   }
                 } else {
-                  // No running validation - check if value changed from last validated value
+                  // No running validation - check if value and numberOfChanges changed from last validation
+                  const lastValidatedValue = lastValidatedFields[field];
+                  const lastValidatedChanges =
+                    get().lastValidatedNumberOfChanges[field];
+
                   if (
-                    (lastValidatedFields[field] !== undefined &&
-                      deepEqual(
-                        lastValidatedFields[field],
-                        currentField.value,
-                      )) ||
+                    (lastValidatedValue !== undefined &&
+                      deepEqual(lastValidatedValue, currentField.value) &&
+                      lastValidatedChanges !== undefined &&
+                      lastValidatedChanges ===
+                        currentField.meta.numberOfChanges) ||
                     currentField.validationState.type === "valid" ||
                     currentField.validationState.type === "invalid"
                   ) {
-                    // Value hasn't changed from last validation, skip
+                    // Value and numberOfChanges haven't changed from last validation, skip
                     return;
                   }
                 }
