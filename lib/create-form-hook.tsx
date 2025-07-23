@@ -82,11 +82,13 @@ interface SkipValidationFlowControl {
 interface ForceValidationFlowControl {
   type: "async-validator";
   strategy: "force";
+  debounceMs?: number;
 }
 
 interface AutoValidationFlowControl {
   type: "async-validator";
   strategy: "auto";
+  debounceMs?: number;
 }
 
 type ValidationFlowControl =
@@ -146,7 +148,7 @@ export type ValidatorsMap<T extends DefaultValues> = {
       | ValidatorWithFlowControl<T[K]>
       | ValidatorWithoutFlowControl<T[K]>;
     asyncValidator?: AsyncValidator<T[K]>;
-    debounce?: number;
+    debounceMs?: number;
   };
 };
 
@@ -206,7 +208,7 @@ export interface Actions<T extends DefaultValues> {
         | ValidatorWithFlowControl<T[K]>
         | ValidatorWithoutFlowControl<T[K]>;
       asyncValidator?: AsyncValidator<T[K]>;
-      debounce?: number;
+      debounceMs?: number;
     },
   ) => void;
   validate: (field: keyof T, action: Action) => void;
@@ -262,7 +264,7 @@ export interface UseFieldOptionsWithAsync<
   name: K;
   validator?: ValidatorWithFlowControl<T[K]>;
   asyncValidator: AsyncValidator<T[K]>;
-  debounce?: number;
+  debounceMs?: number;
 }
 
 // When asyncValidator is not provided, validator cannot return validation flow controls
@@ -273,7 +275,7 @@ export interface UseFieldOptionsWithoutAsync<
   name: K;
   validator?: ValidatorWithoutFlowControl<T[K]>;
   asyncValidator?: never;
-  debounce?: never;
+  debounceMs?: never;
 }
 
 export type UseFieldOptions<T extends DefaultValues, K extends keyof T> =
@@ -721,12 +723,16 @@ function createFormStoreMutative<T extends DefaultValues>(
 
                 // Start scheduled async validation if async validator exists
                 if (validators.asyncValidator) {
-                  const fieldDebounce = validators.debounce ?? debounceDelayMs;
+                  const debounceMs =
+                    resultOrValidationFlowControl.debounceMs ??
+                    validators.debounceMs ??
+                    debounceDelayMs;
+
                   get().scheduleValidation(
                     field,
                     currentField.value,
                     validators.asyncValidator,
-                    fieldDebounce,
+                    debounceMs,
                     action,
                   );
                 }
@@ -738,12 +744,15 @@ function createFormStoreMutative<T extends DefaultValues>(
                 get().cleanupValidation(field);
 
                 if (validators.asyncValidator) {
-                  const fieldDebounce = validators.debounce ?? debounceDelayMs;
+                  const debounceMs =
+                    resultOrValidationFlowControl.debounceMs ??
+                    validators.debounceMs ??
+                    debounceDelayMs;
                   get().scheduleValidation(
                     field,
                     currentField.value,
                     validators.asyncValidator,
-                    fieldDebounce,
+                    debounceMs,
                     action,
                   );
                 }
@@ -864,11 +873,11 @@ function useField<T extends DefaultValues, K extends keyof T>(
     setValidatorsMap(options.name, {
       validator: options.validator,
       asyncValidator: options.asyncValidator,
-      debounce: options.debounce,
+      debounceMs: options.debounceMs,
     });
   }, [
     options.asyncValidator,
-    options.debounce,
+    options.debounceMs,
     options.name,
     options.validator,
     setValidatorsMap,
