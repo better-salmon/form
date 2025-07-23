@@ -10,7 +10,7 @@ import { cn } from "@/utils/cn";
 export function Name() {
   const field = useField({
     name: "name",
-    debounce: 1000,
+    debounceMs: 1000,
     validator: (props) => {
       console.log("validator", props);
       switch (props.action) {
@@ -29,6 +29,7 @@ export function Name() {
           return {
             type: "async-validator",
             strategy: "auto",
+            debounceMs: 1000,
           };
         }
         case "mount": {
