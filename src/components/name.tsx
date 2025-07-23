@@ -27,7 +27,8 @@ export function Name() {
         }
         case "submit": {
           return {
-            type: "auto",
+            type: "async-validator",
+            strategy: "auto",
           };
         }
         case "mount": {

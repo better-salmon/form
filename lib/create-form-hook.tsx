@@ -74,19 +74,25 @@ type FieldState =
   | WaitingState
   | CheckingState;
 
-interface SkipTrigger {
-  type: "skip";
+interface SkipValidationFlowControl {
+  type: "async-validator";
+  strategy: "skip";
 }
 
-interface ForceTrigger {
-  type: "force";
+interface ForceValidationFlowControl {
+  type: "async-validator";
+  strategy: "force";
 }
 
-interface AutoTrigger {
-  type: "auto";
+interface AutoValidationFlowControl {
+  type: "async-validator";
+  strategy: "auto";
 }
 
-type FieldTrigger = ForceTrigger | AutoTrigger;
+type ValidationFlowControl =
+  | SkipValidationFlowControl
+  | ForceValidationFlowControl
+  | AutoValidationFlowControl;
 
 export interface Field<T = unknown> {
   value: T;
@@ -109,14 +115,22 @@ interface FieldValidationPropsWithSignal<T> extends FieldValidationProps<T> {
 
 type SyncValidatorResult =
   | Exclude<FieldState, WaitingState | CheckingState>
-  | FieldTrigger
-  | SkipTrigger;
+  | ValidationFlowControl;
+
+type SyncValidatorResultWithoutFlowControl = Exclude<
+  FieldState,
+  WaitingState | CheckingState
+>;
 
 type AsyncValidatorResult = ValidState | InvalidState | WarningState;
 
-type Validator<T> = (
+type ValidatorWithFlowControl<T> = (
   props: Prettify<FieldValidationProps<T>>,
 ) => SyncValidatorResult | void;
+
+type ValidatorWithoutFlowControl<T> = (
+  props: Prettify<FieldValidationProps<T>>,
+) => SyncValidatorResultWithoutFlowControl | void;
 
 type AsyncValidator<T> = (
   props: Prettify<FieldValidationPropsWithSignal<T>>,
@@ -128,7 +142,9 @@ export type FieldsMap<T extends DefaultValues> = {
 
 export type ValidatorsMap<T extends DefaultValues> = {
   [K in keyof T]?: {
-    validator?: Validator<T[K]>;
+    validator?:
+      | ValidatorWithFlowControl<T[K]>
+      | ValidatorWithoutFlowControl<T[K]>;
     asyncValidator?: AsyncValidator<T[K]>;
     debounce?: number;
   };
@@ -186,7 +202,9 @@ export interface Actions<T extends DefaultValues> {
   setValidatorsMap: <K extends keyof T>(
     field: K,
     validators: {
-      validator?: Validator<T[K]>;
+      validator?:
+        | ValidatorWithFlowControl<T[K]>
+        | ValidatorWithoutFlowControl<T[K]>;
       asyncValidator?: AsyncValidator<T[K]>;
       debounce?: number;
     },
@@ -236,26 +254,26 @@ export interface UseFormResult<T extends DefaultValues> {
   Form: (props: React.ComponentProps<"form">) => React.ReactElement;
 }
 
-// When asyncValidator is provided, validator can return triggers
+// When asyncValidator is provided, validator can return validation flow controls
 export interface UseFieldOptionsWithAsync<
   T extends DefaultValues,
   K extends keyof T,
 > {
   name: K;
-  validator?: Validator<T[K]>;
+  validator?: ValidatorWithFlowControl<T[K]>;
   asyncValidator: AsyncValidator<T[K]>;
   debounce?: number;
 }
 
-// When asyncValidator is not provided, validator cannot return triggers
+// When asyncValidator is not provided, validator cannot return validation flow controls
 export interface UseFieldOptionsWithoutAsync<
   T extends DefaultValues,
   K extends keyof T,
 > {
   name: K;
-  validator?: Validator<T[K]>;
+  validator?: ValidatorWithoutFlowControl<T[K]>;
   asyncValidator?: never;
-  debounce?: number;
+  debounce?: never;
 }
 
 export type UseFieldOptions<T extends DefaultValues, K extends keyof T> =
@@ -651,108 +669,120 @@ function createFormStoreMutative<T extends DefaultValues>(
             value: currentField.value,
           });
 
-          const resultOrTrigger = validatorResult ?? { type: "skip" };
+          const resultOrValidationFlowControl = validatorResult ?? {
+            type: "async-validator",
+            strategy: "skip",
+          };
 
-          switch (resultOrTrigger.type) {
-            case "skip": {
-              const runningValidation = runningValidations[field];
-              if (runningValidation) {
-                // Validation is already running, do nothing
-                return;
-              }
-              // No running validation, keep current state and never run async validation
-              break;
-            }
-
-            case "auto": {
-              const runningValidation = runningValidations[field];
-
-              if (runningValidation) {
-                // Check if value has changed since validation started
-                if (
-                  deepEqual(runningValidation.stateSnapshot, currentField.value)
-                ) {
-                  // Value hasn't changed, continue running existing validation
+          if (resultOrValidationFlowControl.type === "async-validator") {
+            switch (resultOrValidationFlowControl.strategy) {
+              case "skip": {
+                const runningValidation = runningValidations[field];
+                if (runningValidation) {
+                  // Validation is already running, do nothing
                   return;
-                } else {
-                  // Value changed, restart validation from the beginning
-                  get().cleanupValidation(field);
                 }
-              } else {
-                // No running validation - check if value changed from last validated value
-                if (
-                  (lastValidatedFields[field] !== undefined &&
+                // No running validation, keep current state and never run async validation
+                break;
+              }
+
+              case "auto": {
+                const runningValidation = runningValidations[field];
+
+                if (runningValidation) {
+                  // Check if value has changed since validation started
+                  if (
                     deepEqual(
-                      lastValidatedFields[field],
+                      runningValidation.stateSnapshot,
                       currentField.value,
-                    )) ||
-                  currentField.validationState.type === "valid" ||
-                  currentField.validationState.type === "invalid"
-                ) {
-                  // Value hasn't changed from last validation, skip
-                  return;
+                    )
+                  ) {
+                    // Value hasn't changed, continue running existing validation
+                    return;
+                  } else {
+                    // Value changed, restart validation from the beginning
+                    get().cleanupValidation(field);
+                  }
+                } else {
+                  // No running validation - check if value changed from last validated value
+                  if (
+                    (lastValidatedFields[field] !== undefined &&
+                      deepEqual(
+                        lastValidatedFields[field],
+                        currentField.value,
+                      )) ||
+                    currentField.validationState.type === "valid" ||
+                    currentField.validationState.type === "invalid"
+                  ) {
+                    // Value hasn't changed from last validation, skip
+                    return;
+                  }
                 }
+
+                // Start scheduled async validation if async validator exists
+                if (validators.asyncValidator) {
+                  const fieldDebounce = validators.debounce ?? debounceDelayMs;
+                  get().scheduleValidation(
+                    field,
+                    currentField.value,
+                    validators.asyncValidator,
+                    fieldDebounce,
+                    action,
+                  );
+                }
+                break;
               }
 
-              // Start scheduled async validation if async validator exists
-              if (validators.asyncValidator) {
-                const fieldDebounce = validators.debounce ?? debounceDelayMs;
-                get().scheduleValidation(
-                  field,
-                  currentField.value,
-                  validators.asyncValidator,
-                  fieldDebounce,
-                  action,
-                );
+              case "force": {
+                // Cancel existing validation and restart from the beginning
+                get().cleanupValidation(field);
+
+                if (validators.asyncValidator) {
+                  const fieldDebounce = validators.debounce ?? debounceDelayMs;
+                  get().scheduleValidation(
+                    field,
+                    currentField.value,
+                    validators.asyncValidator,
+                    fieldDebounce,
+                    action,
+                  );
+                }
+                break;
               }
-              break;
             }
+          }
 
-            case "force": {
-              // Cancel existing validation and restart from the beginning
-              get().cleanupValidation(field);
-
-              if (validators.asyncValidator) {
-                const fieldDebounce = validators.debounce ?? debounceDelayMs;
-                get().scheduleValidation(
-                  field,
-                  currentField.value,
-                  validators.asyncValidator,
-                  fieldDebounce,
-                  action,
-                );
+          if (resultOrValidationFlowControl.type !== "async-validator") {
+            switch (resultOrValidationFlowControl.type) {
+              case "valid": {
+                setFieldState(field, { type: "valid" });
+                get().cleanupValidation(field);
+                break;
               }
-              break;
-            }
 
-            case "valid": {
-              setFieldState(field, { type: "valid" });
-              get().cleanupValidation(field);
-              break;
-            }
+              case "invalid": {
+                setFieldState(field, {
+                  type: "invalid",
+                  message: resultOrValidationFlowControl.message,
+                });
+                get().cleanupValidation(field);
+                break;
+              }
 
-            case "invalid": {
-              setFieldState(field, {
-                type: "invalid",
-                message: resultOrTrigger.message,
-              });
-              get().cleanupValidation(field);
-              break;
-            }
+              case "warning": {
+                setFieldState(field, {
+                  type: "warning",
+                  message: resultOrValidationFlowControl.message,
+                });
+                get().cleanupValidation(field);
+                break;
+              }
 
-            case "warning": {
-              setFieldState(field, {
-                type: "warning",
-                message: resultOrTrigger.message,
-              });
-              get().cleanupValidation(field);
-              break;
-            }
-
-            case "pending": {
-              setFieldState(field, { type: "pending" });
-              get().cleanupValidation(field);
-              break;
+              case "pending": {
+                setFieldState(field, { type: "pending" });
+                get().cleanupValidation(field);
+                break;
+              }
             }
           }
         },
