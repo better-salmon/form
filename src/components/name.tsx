@@ -1,11 +1,5 @@
 import { useField } from "@/hooks/my-form";
 import { cn } from "@/utils/cn";
-// import { z } from "zod";
-
-// const NameSchema = z.object({
-//   firstName: z.string().min(1, "First name is required"),
-//   lastName: z.string().min(1, "Last name is required"),
-// });
 
 export function Name() {
   const field = useField({
