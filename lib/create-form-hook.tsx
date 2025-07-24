@@ -106,12 +106,13 @@ export interface Field<T = unknown> {
   validationState: FieldState;
 }
 
-interface FieldValidationProps<T> {
+interface FieldValidatorProps<T> {
   action: Action;
   value: T;
+  meta: Field<T>["meta"];
 }
 
-interface FieldValidationPropsWithSignal<T> extends FieldValidationProps<T> {
+interface FieldValidationPropsWithSignal<T> extends FieldValidatorProps<T> {
   signal: AbortSignal;
 }
 
@@ -127,11 +128,11 @@ type SyncValidatorResultWithoutFlowControl = Exclude<
 type AsyncValidatorResult = ValidState | InvalidState | WarningState;
 
 type ValidatorWithFlowControl<T> = (
-  props: Prettify<FieldValidationProps<T>>,
+  props: Prettify<FieldValidatorProps<T>>,
 ) => SyncValidatorResult | void;
 
 type ValidatorWithoutFlowControl<T> = (
-  props: Prettify<FieldValidationProps<T>>,
+  props: Prettify<FieldValidatorProps<T>>,
 ) => SyncValidatorResultWithoutFlowControl | void;
 
 type AsyncValidator<T> = (
@@ -230,19 +231,6 @@ export interface Actions<T extends DefaultValues> {
     field: K,
     value: T[K],
     validator: AsyncValidator<T[K]>,
-    action: Action,
-  ) => void;
-  startAsyncValidation: <K extends keyof T>(
-    field: K,
-    value: T[K],
-    validator: AsyncValidator<T[K]>,
-    action: Action,
-  ) => void;
-  startDebouncedAsyncValidation: <K extends keyof T>(
-    field: K,
-    value: T[K],
-    validator: AsyncValidator<T[K]>,
-    debounceMs: number,
     action: Action,
   ) => void;
 }
@@ -354,18 +342,6 @@ function createFormStoreMutative<T extends DefaultValues>(
       // TYPED HELPER FUNCTIONS FOR CLEAN MUTATIONS
       // ========================================================================
 
-      /** Gets typed fields map from state */
-      const getFields = () => get().fieldsMap;
-
-      /** Gets typed validators map from state */
-      const getValidators = () => get().validatorsMap;
-
-      /** Gets typed running validations from state */
-      const getRunningValidations = () => get().runningValidations;
-
-      /** Gets typed validation IDs from state */
-      const getValidationIds = () => get().validationIds;
-
       /** Mutates fields map with type safety */
       const mutateFields = (mutator: (fields: FieldsMap<T>) => void) => {
         set((state) => {
@@ -453,10 +429,11 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         /** Updates field value and triggers validation */
         setValue: (field, value) => {
-          const fields = getFields();
+          const state = get();
+          const currentFieldValue = state.fieldsMap[field].value;
 
           // Skip if value hasn't changed
-          if (deepEqual(fields[field].value, value)) {
+          if (deepEqual(currentFieldValue, value)) {
             return;
           }
 
@@ -467,14 +444,16 @@ function createFormStoreMutative<T extends DefaultValues>(
             fields[field].meta.numberOfChanges++;
           });
 
-          // Trigger validation after value change
-          get().validate(field, "change");
+          // Trigger validation after value change (reuse actions from state)
+          state.validate(field, "change");
         },
 
         /** Submits specified fields (or all fields if none specified) */
         submit: (fields) => {
-          const fieldsMap = getFields();
-          const fieldsToSubmit = new Set(fields ?? getFieldNames(fieldsMap));
+          const state = get();
+          const fieldsToSubmit = new Set(
+            fields ?? getFieldNames(state.fieldsMap),
+          );
 
           // Update submission metadata and trigger validation for each field
           for (const field of fieldsToSubmit) {
@@ -482,7 +461,7 @@ function createFormStoreMutative<T extends DefaultValues>(
               fields[field].meta.numberOfSubmissions++;
             });
 
-            get().validate(field, "submit");
+            state.validate(field, "submit");
           }
         },
 
@@ -492,7 +471,7 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         /** Cleans up all validation resources for a field */
         cleanupValidation: (field) => {
-          const runningValidation = getRunningValidations()[field];
+          const runningValidation = get().runningValidations[field];
 
           if (!runningValidation) {
             return;
@@ -514,7 +493,7 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         /** Increments validation ID for a field and returns the new ID */
         incrementValidationId: (field) => {
-          const currentId = getValidationIds()[field];
+          const currentId = get().validationIds[field];
           const newId = currentId + 1;
 
           mutateValidationIds((ids) => {
@@ -526,11 +505,13 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         /** Schedules debounced validation for a field */
         scheduleValidation: (field, value, validator, debounceMs, action) => {
+          const state = get();
+
           // Cancel any existing validation first
-          get().cleanupValidation(field);
+          state.cleanupValidation(field);
 
           // Increment validation ID for this field
-          const validationId = get().incrementValidationId(field);
+          const validationId = state.incrementValidationId(field);
 
           // Create new abort controller
           const abortController = new AbortController();
@@ -565,11 +546,15 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         /** Runs async validation for a field */
         runValidation: (field, value, validator, action) => {
+          const state = get();
+
           // Abort any existing validation for this field
-          get().cleanupValidation(field);
+          state.cleanupValidation(field);
+
+          const currentField = state.fieldsMap[field];
 
           // Increment validation ID for this field
-          const validationId = get().incrementValidationId(field);
+          const validationId = state.incrementValidationId(field);
 
           // Create new abort controller
           const abortController = new AbortController();
@@ -602,6 +587,7 @@ function createFormStoreMutative<T extends DefaultValues>(
           validator({
             action: action,
             value,
+            meta: currentField.meta,
             signal: abortController.signal,
           })
             .then((result) => {
@@ -610,7 +596,7 @@ function createFormStoreMutative<T extends DefaultValues>(
                 return;
               }
 
-              const currentValidationId = getValidationIds()[field];
+              const currentValidationId = get().validationIds[field];
               if (validationId !== currentValidationId) {
                 return;
               }
@@ -625,7 +611,7 @@ function createFormStoreMutative<T extends DefaultValues>(
                 return;
               }
 
-              const currentValidationId = getValidationIds()[field];
+              const currentValidationId = get().validationIds[field];
               if (validationId !== currentValidationId) {
                 return;
               }
@@ -645,31 +631,12 @@ function createFormStoreMutative<T extends DefaultValues>(
         // VALIDATION TRIGGER ACTIONS
         // ======================================================================
 
-        /** Starts immediate async validation (no debounce) */
-        startAsyncValidation: (field, value, validator, action) => {
-          get().runValidation(field, value, validator, action);
-        },
-
-        /** Starts debounced async validation */
-        startDebouncedAsyncValidation: (
-          field,
-          value,
-          validator,
-          debounceMs,
-          action,
-        ) => {
-          get().scheduleValidation(field, value, validator, debounceMs, action);
-        },
-
         /** Main validation orchestrator - handles sync validation and triggers async validation */
         validate: (field, action) => {
-          const fieldsMap = getFields();
-          const validatorsMap = getValidators();
-          const runningValidations = getRunningValidations();
-          const { debounceDelayMs, lastValidatedFields } = get();
+          const state = get();
 
-          const currentField = fieldsMap[field];
-          const validators = validatorsMap[field];
+          const currentField = state.fieldsMap[field];
+          const validators = state.validatorsMap[field];
 
           if (!validators) {
             return;
@@ -679,6 +646,7 @@ function createFormStoreMutative<T extends DefaultValues>(
           const validatorResult = validators.validator?.({
             action,
             value: currentField.value,
+            meta: currentField.meta,
           });
 
           const resultOrValidationFlowControl = validatorResult ?? {
@@ -689,7 +657,7 @@ function createFormStoreMutative<T extends DefaultValues>(
           if (resultOrValidationFlowControl.type === "async-validator") {
             switch (resultOrValidationFlowControl.strategy) {
               case "skip": {
-                const runningValidation = runningValidations[field];
+                const runningValidation = state.runningValidations[field];
                 if (runningValidation) {
                   // Validation is already running, do nothing
                   return;
@@ -699,7 +667,7 @@ function createFormStoreMutative<T extends DefaultValues>(
               }
 
               case "auto": {
-                const runningValidation = runningValidations[field];
+                const runningValidation = state.runningValidations[field];
 
                 if (runningValidation) {
                   // Check if value has changed since validation started
@@ -713,13 +681,13 @@ function createFormStoreMutative<T extends DefaultValues>(
                     return;
                   } else {
                     // Value changed, restart validation from the beginning
-                    get().cleanupValidation(field);
+                    state.cleanupValidation(field);
                   }
                 } else {
                   // No running validation - check if value and numberOfChanges changed from last validation
-                  const lastValidatedValue = lastValidatedFields[field];
+                  const lastValidatedValue = state.lastValidatedFields[field];
                   const lastValidatedChanges =
-                    get().lastValidatedNumberOfChanges[field];
+                    state.lastValidatedNumberOfChanges[field];
 
                   if (
                     (lastValidatedValue !== undefined &&
@@ -740,9 +708,9 @@ function createFormStoreMutative<T extends DefaultValues>(
                   const debounceMs =
                     resultOrValidationFlowControl.debounceMs ??
                     validators.debounceMs ??
-                    debounceDelayMs;
+                    state.debounceDelayMs;
 
-                  get().scheduleValidation(
+                  state.scheduleValidation(
                     field,
                     currentField.value,
                     validators.asyncValidator,
@@ -755,14 +723,14 @@ function createFormStoreMutative<T extends DefaultValues>(
 
               case "force": {
                 // Cancel existing validation and restart from the beginning
-                get().cleanupValidation(field);
+                state.cleanupValidation(field);
 
                 if (validators.asyncValidator) {
                   const debounceMs =
                     resultOrValidationFlowControl.debounceMs ??
                     validators.debounceMs ??
-                    debounceDelayMs;
-                  get().scheduleValidation(
+                    state.debounceDelayMs;
+                  state.scheduleValidation(
                     field,
                     currentField.value,
                     validators.asyncValidator,
@@ -779,7 +747,7 @@ function createFormStoreMutative<T extends DefaultValues>(
             switch (resultOrValidationFlowControl.type) {
               case "valid": {
                 setFieldState(field, { type: "valid" });
-                get().cleanupValidation(field);
+                state.cleanupValidation(field);
                 break;
               }
 
@@ -788,7 +756,7 @@ function createFormStoreMutative<T extends DefaultValues>(
                   type: "invalid",
                   message: resultOrValidationFlowControl.message,
                 });
-                get().cleanupValidation(field);
+                state.cleanupValidation(field);
                 break;
               }
 
@@ -797,13 +765,13 @@ function createFormStoreMutative<T extends DefaultValues>(
                   type: "warning",
                   message: resultOrValidationFlowControl.message,
                 });
-                get().cleanupValidation(field);
+                state.cleanupValidation(field);
                 break;
               }
 
               case "pending": {
                 setFieldState(field, { type: "pending" });
-                get().cleanupValidation(field);
+                state.cleanupValidation(field);
                 break;
               }
             }
