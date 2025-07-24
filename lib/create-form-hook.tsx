@@ -112,23 +112,49 @@ export interface Field<T = unknown> {
   validationState: FieldState;
 }
 
-interface FieldValidatorProps<T> {
+interface FieldValidatorProps<T extends DefaultValues, K extends keyof T> {
   action: Action;
-  value: T;
-  meta: Field<T>["meta"];
-  validateWithStandardSchema: (
-    schema: StandardSchemaV1<T>,
-  ) => readonly StandardSchemaV1.Issue[] | undefined;
+  value: T[K];
+  meta: Field<T[K]>["meta"];
+  validationState: Field<T[K]>["validationState"];
+  validateWithStandardSchema: () =>
+    | readonly StandardSchemaV1.Issue[]
+    | undefined;
+  formApi: {
+    getField: <F extends Exclude<keyof T, K>>(
+      field: F,
+    ) => {
+      value: T[F];
+      meta: Field<T[F]>["meta"];
+      validationState: Field<T[F]>["validationState"];
+      validateWithStandardSchema: () =>
+        | readonly StandardSchemaV1.Issue[]
+        | undefined;
+    };
+  };
 }
 
-interface FieldAsyncValidatorProps<T> {
+interface FieldAsyncValidatorProps<T extends DefaultValues, K extends keyof T> {
   action: Action;
-  value: T;
-  meta: Field<T>["meta"];
+  value: T[K];
+  meta: Field<T[K]>["meta"];
+  validationState: Field<T[K]>["validationState"];
   getAbortSignal: () => AbortSignal;
   validateWithStandardSchemaAsync: (
-    schema: StandardSchemaV1<T>,
+    schema: StandardSchemaV1<T[K]>,
   ) => Promise<readonly StandardSchemaV1.Issue[] | undefined>;
+  formApi: {
+    getField: <F extends Exclude<keyof T, K>>(
+      field: F,
+    ) => {
+      value: T[F];
+      meta: Field<T[F]>["meta"];
+      validationState: Field<T[F]>["validationState"];
+      validateWithStandardSchemaAsync: () => Promise<
+        readonly StandardSchemaV1.Issue[] | undefined
+      >;
+    };
+  };
 }
 
 type SyncValidatorResult =
@@ -142,16 +168,22 @@ type SyncValidatorResultWithoutFlowControl = Exclude<
 
 type AsyncValidatorResult = ValidState | InvalidState | WarningState;
 
-type ValidatorWithFlowControl<T> = (
-  props: Prettify<FieldValidatorProps<T>>,
+type ValidatorWithFlowControl<
+  TForm extends DefaultValues,
+  K extends keyof TForm,
+> = (
+  props: Prettify<FieldValidatorProps<TForm, K>>,
 ) => SyncValidatorResult | void;
 
-type ValidatorWithoutFlowControl<T> = (
-  props: Prettify<FieldValidatorProps<T>>,
+type ValidatorWithoutFlowControl<
+  TForm extends DefaultValues,
+  K extends keyof TForm,
+> = (
+  props: Prettify<FieldValidatorProps<TForm, K>>,
 ) => SyncValidatorResultWithoutFlowControl | void;
 
-type AsyncValidator<T> = (
-  props: Prettify<FieldAsyncValidatorProps<T>>,
+type AsyncValidator<T extends DefaultValues, K extends keyof T> = (
+  props: Prettify<FieldAsyncValidatorProps<T, K>>,
 ) => Promise<AsyncValidatorResult>;
 
 export type FieldsMap<T extends DefaultValues> = {
@@ -161,9 +193,9 @@ export type FieldsMap<T extends DefaultValues> = {
 export type ValidatorsMap<T extends DefaultValues> = {
   [K in keyof T]?: {
     validator?:
-      | ValidatorWithFlowControl<T[K]>
-      | ValidatorWithoutFlowControl<T[K]>;
-    asyncValidator?: AsyncValidator<T[K]>;
+      | ValidatorWithFlowControl<T, K>
+      | ValidatorWithoutFlowControl<T, K>;
+    asyncValidator?: AsyncValidator<T, K>;
     debounceMs?: number;
   };
 };
@@ -182,6 +214,10 @@ export type FieldEntries<T extends DefaultValues> = {
 
 export type ValidationIdsMap<T extends DefaultValues> = {
   [K in keyof T]: number;
+};
+
+export type StandardSchemasMap<T extends DefaultValues> = {
+  [K in keyof T]?: StandardSchemaV1<T[K]>;
 };
 
 // ============================================================================
@@ -216,6 +252,7 @@ export interface Store<T extends DefaultValues> {
   lastValidatedFields: LastValidatedFieldsMap<T>;
   lastValidatedNumberOfChanges: LastValidatedNumberOfChangesMap<T>;
   validationIds: ValidationIdsMap<T>;
+  standardSchemasMap: StandardSchemasMap<T>;
 }
 
 export interface Actions<T extends DefaultValues> {
@@ -226,13 +263,17 @@ export interface Actions<T extends DefaultValues> {
     field: K,
     validators: {
       validator?:
-        | ValidatorWithFlowControl<T[K]>
-        | ValidatorWithoutFlowControl<T[K]>;
-      asyncValidator?: AsyncValidator<T[K]>;
+        | ValidatorWithFlowControl<T, K>
+        | ValidatorWithoutFlowControl<T, K>;
+      asyncValidator?: AsyncValidator<T, K>;
       debounceMs?: number;
     },
   ) => void;
   validate: (field: keyof T, action: Action) => void;
+  setStandardSchemasMap: <K extends keyof T>(
+    field: K,
+    standardSchema?: StandardSchemaV1<T[K]>,
+  ) => void;
 }
 
 // ============================================================================
@@ -255,9 +296,10 @@ export interface UseFieldOptionsWithAsync<
   K extends keyof T,
 > {
   name: K;
-  validator?: ValidatorWithFlowControl<T[K]>;
-  asyncValidator: AsyncValidator<T[K]>;
+  validator?: ValidatorWithFlowControl<T, K>;
+  asyncValidator: AsyncValidator<T, K>;
   debounceMs?: number;
+  standardSchema?: StandardSchemaV1<T[K]>;
 }
 
 // When asyncValidator is not provided, validator cannot return validation flow controls
@@ -266,9 +308,10 @@ export interface UseFieldOptionsWithoutAsync<
   K extends keyof T,
 > {
   name: K;
-  validator?: ValidatorWithoutFlowControl<T[K]>;
+  validator?: ValidatorWithoutFlowControl<T, K>;
   asyncValidator?: never;
   debounceMs?: never;
+  standardSchema?: StandardSchemaV1<T[K]>;
 }
 
 export type UseFieldOptions<T extends DefaultValues, K extends keyof T> =
@@ -616,7 +659,7 @@ function createFormStoreMutative<T extends DefaultValues>(
       function scheduleValidation<K extends keyof T>(
         field: K,
         value: T[K],
-        validator: AsyncValidator<T[K]>,
+        validator: AsyncValidator<T, K>,
         debounceMs: number,
         action: Action,
       ) {
@@ -652,7 +695,7 @@ function createFormStoreMutative<T extends DefaultValues>(
       function runValidation<K extends keyof T>(
         field: K,
         value: T[K],
-        validator: AsyncValidator<T[K]>,
+        validator: AsyncValidator<T, K>,
         action: Action,
       ) {
         // Abort any existing validation for this field
@@ -703,9 +746,13 @@ function createFormStoreMutative<T extends DefaultValues>(
           action: action,
           value,
           meta: currentField.meta,
+          validationState: currentField.validationState,
           getAbortSignal,
           validateWithStandardSchemaAsync: async (schema) =>
             await standardValidateAsync(schema, value),
+          formApi: {
+            getField: getFieldForFormApiAsync,
+          },
         })
           .then((result) => {
             // Check if validation was aborted or is stale
@@ -744,6 +791,40 @@ function createFormStoreMutative<T extends DefaultValues>(
           });
       }
 
+      // Helper function to get field data for form API
+      function getFieldForFormApi<F extends keyof T>(targetField: F) {
+        const state = get();
+        const targetFieldData = state.fieldsMap[targetField];
+        const standardSchema = state.standardSchemasMap[targetField];
+        return {
+          value: targetFieldData.value,
+          meta: targetFieldData.meta,
+          validationState: targetFieldData.validationState,
+          validateWithStandardSchema: () =>
+            standardSchema
+              ? standardValidate(standardSchema, targetFieldData.value)
+              : undefined,
+        };
+      }
+
+      function getFieldForFormApiAsync<F extends keyof T>(targetField: F) {
+        const state = get();
+        const targetFieldData = state.fieldsMap[targetField];
+        const standardSchema = state.standardSchemasMap[targetField];
+        return {
+          value: targetFieldData.value,
+          meta: targetFieldData.meta,
+          validationState: targetFieldData.validationState,
+          validateWithStandardSchemaAsync: async () =>
+            standardSchema
+              ? await standardValidateAsync(
+                  standardSchema,
+                  targetFieldData.value,
+                )
+              : undefined,
+        };
+      }
+
       /** Main validation orchestrator - handles sync validation and triggers async validation */
       function validate(field: keyof T, action: Action) {
         const state = get();
@@ -755,13 +836,23 @@ function createFormStoreMutative<T extends DefaultValues>(
           return;
         }
 
+        const standardSchema = state.standardSchemasMap[field];
+
         // Run sync validator if it exists
         const validatorResult = validators.validator?.({
           action,
           value: currentField.value,
           meta: currentField.meta,
-          validateWithStandardSchema: (schema) =>
-            standardValidate(schema, currentField.value),
+          validationState: currentField.validationState,
+          validateWithStandardSchema: () =>
+            standardSchema
+              ? standardValidate(standardSchema, currentField.value)
+              : undefined,
+          formApi: {
+            getField: <F extends Exclude<keyof T, typeof field>>(
+              targetField: F,
+            ) => getFieldForFormApi(targetField),
+          },
         });
 
         const resultOrValidationFlowControl = validatorResult ?? {
@@ -782,6 +873,16 @@ function createFormStoreMutative<T extends DefaultValues>(
         }
       }
 
+      function mutateStandardSchemas(
+        mutator: (standardSchemas: StandardSchemasMap<T>) => void,
+      ) {
+        set((state) => {
+          const standardSchemas =
+            state.standardSchemasMap as StandardSchemasMap<T>;
+          mutator(standardSchemas);
+        });
+      }
+
       return {
         // ======================================================================
         // INITIAL STATE
@@ -796,6 +897,7 @@ function createFormStoreMutative<T extends DefaultValues>(
         validationIds: Object.fromEntries(
           Object.keys(options.defaultValues).map((field) => [field, 0]),
         ) as ValidationIdsMap<T>,
+        standardSchemasMap: {},
 
         // ======================================================================
         // CONFIGURATION ACTIONS
@@ -870,6 +972,12 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         /** Main validation orchestrator - handles sync validation and triggers async validation */
         validate,
+
+        setStandardSchemasMap: (field, standardSchema) => {
+          mutateStandardSchemas((standardSchemas) => {
+            standardSchemas[field] = standardSchema;
+          });
+        },
       };
     }),
   );
@@ -943,6 +1051,10 @@ function useField<T extends DefaultValues, K extends keyof T>(
     (state) => state.setValidatorsMap,
   );
   const validate = useStore(formStore, (state) => state.validate);
+  const setStandardSchemasMap = useStore(
+    formStore,
+    (state) => state.setStandardSchemasMap,
+  );
 
   useIsomorphicEffect(() => {
     setValidatorsMap(options.name, {
@@ -950,11 +1062,14 @@ function useField<T extends DefaultValues, K extends keyof T>(
       asyncValidator: options.asyncValidator,
       debounceMs: options.debounceMs,
     });
+    setStandardSchemasMap(options.name, options.standardSchema);
   }, [
     options.asyncValidator,
     options.debounceMs,
     options.name,
+    options.standardSchema,
     options.validator,
+    setStandardSchemasMap,
     setValidatorsMap,
   ]);
 

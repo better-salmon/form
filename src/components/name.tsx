@@ -2,7 +2,7 @@ import { useField } from "@/hooks/my-form";
 import { cn } from "@/utils/cn";
 import { z } from "zod";
 
-const nameSchema = z.object({
+const NameSchema = z.object({
   firstName: z
     .string()
     .min(1, "First name is required")
@@ -14,9 +14,13 @@ export function Name() {
   const field = useField({
     name: "name",
     debounceMs: 1000,
+    standardSchema: NameSchema,
     validator: (props) => {
       console.log("validator", props);
-      const issues = props.validateWithStandardSchema(nameSchema);
+      const issues = props.validateWithStandardSchema();
+
+      const phone = props.formApi.getField("email");
+      console.log("phone", phone);
 
       switch (props.action) {
         case "change": {
@@ -46,6 +50,9 @@ export function Name() {
     },
     asyncValidator: async (props) => {
       console.log("asyncValidator", props);
+
+      const email = props.formApi.getField("email");
+      console.log("email async", email);
 
       await fetch(
         `http://localhost:3001/ok?delay=1000&value=${props.value.firstName}`,
