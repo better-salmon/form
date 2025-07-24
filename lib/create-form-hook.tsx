@@ -25,7 +25,7 @@ type DefaultValues = Record<string, unknown>;
 
 interface RunningValidation<T = unknown> {
   stateSnapshot: T;
-  abortController: AbortController;
+  abortController?: AbortController;
   timeoutId?: NodeJS.Timeout;
   validationId: number;
 }
@@ -113,7 +113,7 @@ interface FieldValidatorProps<T> {
 }
 
 interface FieldValidationPropsWithSignal<T> extends FieldValidatorProps<T> {
-  signal: AbortSignal;
+  getAbortSignal: () => AbortSignal;
 }
 
 type SyncValidatorResult =
@@ -482,8 +482,10 @@ function createFormStoreMutative<T extends DefaultValues>(
             clearTimeout(runningValidation.timeoutId);
           }
 
-          // Abort the async operation
-          runningValidation.abortController.abort();
+          // Abort the async operation only if controller was created
+          if (runningValidation.abortController) {
+            runningValidation.abortController.abort();
+          }
 
           // Remove from running validations
           mutateRunningValidations((validations) => {
@@ -513,9 +515,6 @@ function createFormStoreMutative<T extends DefaultValues>(
           // Increment validation ID for this field
           const validationId = state.incrementValidationId(field);
 
-          // Create new abort controller
-          const abortController = new AbortController();
-
           // Set field state to waiting
           setFieldState(field, { type: "waiting" });
 
@@ -533,11 +532,10 @@ function createFormStoreMutative<T extends DefaultValues>(
             get().runValidation(field, value, validator, action);
           }, debounceMs);
 
-          // Store the running validation with timeout
+          // Store the running validation with timeout (no abortController initially)
           mutateRunningValidations((validations) => {
             validations[field] = {
               stateSnapshot: value,
-              abortController,
               timeoutId,
               validationId,
             } satisfies RunningValidation<T[typeof field]>;
@@ -556,8 +554,22 @@ function createFormStoreMutative<T extends DefaultValues>(
           // Increment validation ID for this field
           const validationId = state.incrementValidationId(field);
 
-          // Create new abort controller
-          const abortController = new AbortController();
+          // Create lazy abort signal factory
+          let abortController: AbortController | undefined;
+
+          const getAbortSignal = (): AbortSignal => {
+            if (!abortController) {
+              abortController = new AbortController();
+              // Update the running validation to store the controller
+              mutateRunningValidations((validations) => {
+                const existing = validations[field];
+                if (existing) {
+                  existing.abortController = abortController;
+                }
+              });
+            }
+            return abortController.signal;
+          };
 
           // Store the running validation and update field state
           set((state) => {
@@ -571,7 +583,6 @@ function createFormStoreMutative<T extends DefaultValues>(
 
             validations[field] = {
               stateSnapshot: value,
-              abortController,
               timeoutId: undefined,
               validationId,
             } satisfies RunningValidation<T[typeof field]>;
@@ -588,11 +599,11 @@ function createFormStoreMutative<T extends DefaultValues>(
             action: action,
             value,
             meta: currentField.meta,
-            signal: abortController.signal,
+            getAbortSignal,
           })
             .then((result) => {
               // Check if validation was aborted or is stale
-              if (abortController.signal.aborted) {
+              if (abortController?.signal.aborted) {
                 return;
               }
 
@@ -607,7 +618,7 @@ function createFormStoreMutative<T extends DefaultValues>(
             })
             .catch((error: unknown) => {
               // Check if validation was aborted or is stale
-              if (abortController.signal.aborted) {
+              if (abortController?.signal.aborted) {
                 return;
               }
 
