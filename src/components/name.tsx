@@ -44,7 +44,7 @@ export function Name() {
       await fetch(
         `http://localhost:3001/ok?delay=1000&value=${props.value.firstName}`,
         {
-          signal: props.signal,
+          signal: props.getAbortSignal(),
         },
       );
 
