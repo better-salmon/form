@@ -4,6 +4,11 @@ import { mutative } from "zustand-mutative";
 import { useShallow } from "zustand/react/shallow";
 import { deepEqual } from "@lib/deep-equal";
 import { useIsomorphicEffect } from "@lib/use-isomorphic-effect";
+import { type StandardSchemaV1 } from "@standard-schema/spec";
+import {
+  standardValidate,
+  standardValidateAsync,
+} from "@lib/standard-validate";
 
 // ============================================================================
 // CONSTANTS
@@ -111,10 +116,19 @@ interface FieldValidatorProps<T> {
   action: Action;
   value: T;
   meta: Field<T>["meta"];
+  validateWithStandardSchema: (
+    schema: StandardSchemaV1<T>,
+  ) => readonly StandardSchemaV1.Issue[] | undefined;
 }
 
-interface FieldValidationPropsWithSignal<T> extends FieldValidatorProps<T> {
+interface FieldAsyncValidatorProps<T> {
+  action: Action;
+  value: T;
+  meta: Field<T>["meta"];
   getAbortSignal: () => AbortSignal;
+  validateWithStandardSchemaAsync: (
+    schema: StandardSchemaV1<T>,
+  ) => Promise<readonly StandardSchemaV1.Issue[] | undefined>;
 }
 
 type SyncValidatorResult =
@@ -137,7 +151,7 @@ type ValidatorWithoutFlowControl<T> = (
 ) => SyncValidatorResultWithoutFlowControl | void;
 
 type AsyncValidator<T> = (
-  props: Prettify<FieldValidationPropsWithSignal<T>>,
+  props: Prettify<FieldAsyncValidatorProps<T>>,
 ) => Promise<AsyncValidatorResult>;
 
 export type FieldsMap<T extends DefaultValues> = {
@@ -690,6 +704,8 @@ function createFormStoreMutative<T extends DefaultValues>(
           value,
           meta: currentField.meta,
           getAbortSignal,
+          validateWithStandardSchemaAsync: async (schema) =>
+            await standardValidateAsync(schema, value),
         })
           .then((result) => {
             // Check if validation was aborted or is stale
@@ -744,6 +760,8 @@ function createFormStoreMutative<T extends DefaultValues>(
           action,
           value: currentField.value,
           meta: currentField.meta,
+          validateWithStandardSchema: (schema) =>
+            standardValidate(schema, currentField.value),
         });
 
         const resultOrValidationFlowControl = validatorResult ?? {
