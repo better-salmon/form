@@ -140,9 +140,9 @@ interface FieldAsyncValidatorProps<T extends DefaultValues, K extends keyof T> {
   meta: Field<T[K]>["meta"];
   validationState: Field<T[K]>["validationState"];
   getAbortSignal: () => AbortSignal;
-  validateWithStandardSchemaAsync: (
-    schema: StandardSchemaV1<T[K]>,
-  ) => Promise<readonly StandardSchemaV1.Issue[] | undefined>;
+  validateWithStandardSchemaAsync: () => Promise<
+    readonly StandardSchemaV1.Issue[] | undefined
+  >;
   formApi: {
     getField: <F extends Exclude<keyof T, K>>(
       field: F,
@@ -741,6 +741,8 @@ function createFormStoreMutative<T extends DefaultValues>(
             fields[field].meta.numberOfChanges;
         });
 
+        const standardSchema = get().standardSchemasMap[field];
+
         // Run async validation
         validator({
           action: action,
@@ -748,8 +750,10 @@ function createFormStoreMutative<T extends DefaultValues>(
           meta: currentField.meta,
           validationState: currentField.validationState,
           getAbortSignal,
-          validateWithStandardSchemaAsync: async (schema) =>
-            await standardValidateAsync(schema, value),
+          validateWithStandardSchemaAsync: async () =>
+            standardSchema
+              ? await standardValidateAsync(standardSchema, value)
+              : undefined,
           formApi: {
             getField: getFieldForFormApiAsync,
           },
