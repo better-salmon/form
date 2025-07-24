@@ -1,5 +1,14 @@
 import { useField } from "@/hooks/my-form";
 import { cn } from "@/utils/cn";
+import { z } from "zod";
+
+const nameSchema = z.object({
+  firstName: z
+    .string()
+    .min(1, "First name is required")
+    .max(10, "First name is too long"),
+  lastName: z.string().min(1, "Last name is required"),
+});
 
 export function Name() {
   const field = useField({
@@ -7,12 +16,14 @@ export function Name() {
     debounceMs: 1000,
     validator: (props) => {
       console.log("validator", props);
+      const issues = props.validateWithStandardSchema(nameSchema);
+
       switch (props.action) {
         case "change": {
-          if (props.value.firstName.length > 10) {
+          if (issues?.length && issues[0].message) {
             return {
               type: "warning",
-              message: "Name is too long",
+              message: issues[0].message,
             };
           }
           return {
@@ -35,6 +46,7 @@ export function Name() {
     },
     asyncValidator: async (props) => {
       console.log("asyncValidator", props);
+
       await fetch(
         `http://localhost:3001/ok?delay=1000&value=${props.value.firstName}`,
         {
