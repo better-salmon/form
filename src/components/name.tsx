@@ -43,7 +43,9 @@ const nameFieldOptions = {
       }
       case "mount": {
         return {
-          type: "pending",
+          type: "async-validator",
+          strategy: "force",
+          debounceMs: 0,
         };
       }
     }

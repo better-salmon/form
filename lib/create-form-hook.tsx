@@ -1,4 +1,4 @@
-import { createContext, use, useRef, useState } from "react";
+import { createContext, use, useCallback, useMemo, useState } from "react";
 import { createStore, useStore, type StoreApi } from "zustand";
 import { mutative } from "zustand-mutative";
 import { useShallow } from "zustand/react/shallow";
@@ -127,6 +127,7 @@ type FieldValidatorProps<T extends DefaultValues, K extends keyof T> = {
     ) => {
       value: T[F];
       meta: Field<T[F]>["meta"];
+      isMounted: boolean;
       validationState: Field<T[F]>["validationState"];
       validateWithStandardSchema: () =>
         | readonly StandardSchemaV1.Issue[]
@@ -150,6 +151,7 @@ type FieldAsyncValidatorProps<T extends DefaultValues, K extends keyof T> = {
     ) => {
       value: T[F];
       meta: Field<T[F]>["meta"];
+      isMounted: boolean;
       validationState: Field<T[F]>["validationState"];
       validateWithStandardSchemaAsync: () => Promise<
         readonly StandardSchemaV1.Issue[] | undefined
@@ -221,6 +223,10 @@ export type StandardSchemasMap<T extends DefaultValues> = {
   [K in keyof T]?: StandardSchemaV1<T[K]>;
 };
 
+export type IsMountedMap<T extends DefaultValues> = {
+  [K in keyof T]: boolean;
+};
+
 // ============================================================================
 // API TYPES
 // ============================================================================
@@ -254,9 +260,11 @@ export type Store<T extends DefaultValues> = {
   lastValidatedNumberOfChanges: LastValidatedNumberOfChangesMap<T>;
   validationIds: ValidationIdsMap<T>;
   standardSchemasMap: StandardSchemasMap<T>;
+  isMountedMap: IsMountedMap<T>;
 };
 
 export type Actions<T extends DefaultValues> = {
+  setIsMountedMap: (field: keyof T, isMounted: boolean) => void;
   setValue: <K extends keyof T>(field: K, value: T[K]) => void;
   submit: (fields?: readonly (keyof T)[]) => void;
   setDefaultValues: (defaultValues: T) => void;
@@ -271,6 +279,7 @@ export type Actions<T extends DefaultValues> = {
     },
   ) => void;
   validate: (field: keyof T, action: Action) => void;
+  abortValidation: (field: keyof T) => void;
   setStandardSchemasMap: <K extends keyof T>(
     field: K,
     standardSchema?: StandardSchemaV1<T[K]>,
@@ -327,7 +336,7 @@ export type FieldProps<
   T extends DefaultValues,
   K extends keyof T,
 > = UseFieldOptions<T, K> & {
-  render: (props: Prettify<FieldApi<T, K>>) => React.ReactNode;
+  children: (props: Prettify<FieldApi<T, K>>) => React.ReactNode;
 };
 
 export type CreateFormHookResult<T extends DefaultValues> = {
@@ -671,6 +680,12 @@ function createFormStoreMutative<T extends DefaultValues>(
         // Cancel any existing validation first
         cleanupValidation(field);
 
+        // If debounce is 0, execute immediately without setTimeout
+        if (debounceMs === 0) {
+          runValidation(field, value, validator, action);
+          return;
+        }
+
         // Increment validation ID for this field
         const validationId = incrementValidationId(field);
 
@@ -808,6 +823,7 @@ function createFormStoreMutative<T extends DefaultValues>(
         return {
           value: targetFieldData.value,
           meta: targetFieldData.meta,
+          isMounted: state.isMountedMap[targetField],
           validationState: targetFieldData.validationState,
           validateWithStandardSchema: () =>
             standardSchema
@@ -823,6 +839,7 @@ function createFormStoreMutative<T extends DefaultValues>(
         return {
           value: targetFieldData.value,
           meta: targetFieldData.meta,
+          isMounted: state.isMountedMap[targetField],
           validationState: targetFieldData.validationState,
           validateWithStandardSchemaAsync: async () =>
             standardSchema
@@ -892,6 +909,15 @@ function createFormStoreMutative<T extends DefaultValues>(
         });
       }
 
+      function mutateIsMountedMap(
+        mutator: (isMountedMap: IsMountedMap<T>) => void,
+      ) {
+        set((state) => {
+          const isMountedMap = state.isMountedMap as IsMountedMap<T>;
+          mutator(isMountedMap);
+        });
+      }
+
       return {
         // ======================================================================
         // INITIAL STATE
@@ -907,6 +933,9 @@ function createFormStoreMutative<T extends DefaultValues>(
           Object.keys(options.defaultValues).map((field) => [field, 0]),
         ) as ValidationIdsMap<T>,
         standardSchemasMap: {},
+        isMountedMap: Object.fromEntries(
+          Object.keys(options.defaultValues).map((field) => [field, false]),
+        ) as IsMountedMap<T>,
 
         // ======================================================================
         // CONFIGURATION ACTIONS
@@ -936,6 +965,12 @@ function createFormStoreMutative<T extends DefaultValues>(
         // ======================================================================
         // FIELD VALUE ACTIONS
         // ======================================================================
+
+        setIsMountedMap: (field, isMounted) => {
+          mutateIsMountedMap((isMountedMap) => {
+            isMountedMap[field] = isMounted;
+          });
+        },
 
         /** Updates field value and triggers validation */
         setValue: (field, value) => {
@@ -982,6 +1017,13 @@ function createFormStoreMutative<T extends DefaultValues>(
         /** Main validation orchestrator - handles sync validation and triggers async validation */
         validate,
 
+        abortValidation: (field) => {
+          cleanupValidation(field);
+          mutateFields((fields) => {
+            fields[field].validationState = { type: "pending" };
+          });
+        },
+
         setStandardSchemasMap: (field, standardSchema) => {
           mutateStandardSchemas((standardSchemas) => {
             standardSchemas[field] = standardSchema;
@@ -1018,14 +1060,14 @@ function FormProvider({
 }
 
 /**
- * Field component that renders a field using the provided render prop
+ * Field component that renders a field using the provided children prop
  */
 function Field<T extends DefaultValues, K extends keyof T>(
   props: FieldProps<T, K>,
 ): React.ReactNode {
   const fieldApi = useField<T, K>(props);
 
-  return props.render(fieldApi);
+  return props.children(fieldApi);
 }
 
 // ============================================================================
@@ -1043,8 +1085,6 @@ function useField<T extends DefaultValues, K extends keyof T>(
   if (!formStore) {
     throw new Error("FormProvider is not found");
   }
-
-  const isMountedRef = useRef(false);
 
   // Subscribe to field state
   const field = useStore(
@@ -1064,6 +1104,8 @@ function useField<T extends DefaultValues, K extends keyof T>(
     formStore,
     (state) => state.setStandardSchemasMap,
   );
+  const setIsMountedMap = useStore(formStore, (state) => state.setIsMountedMap);
+  const abortValidation = useStore(formStore, (state) => state.abortValidation);
 
   useIsomorphicEffect(() => {
     setValidatorsMap(options.name, {
@@ -1073,42 +1115,51 @@ function useField<T extends DefaultValues, K extends keyof T>(
     });
     setStandardSchemasMap(options.name, options.standardSchema);
   }, [
-    options.asyncValidator,
-    options.debounceMs,
     options.name,
+    options.debounceMs,
     options.standardSchema,
     options.validator,
+    options.asyncValidator,
     setStandardSchemasMap,
     setValidatorsMap,
   ]);
 
   useIsomorphicEffect(() => {
-    if (isMountedRef.current) {
-      return;
-    }
-    isMountedRef.current = true;
+    setIsMountedMap(options.name, true);
     validate(options.name, "mount");
-  }, [options.name, validate]);
+    const fieldName = options.name;
+
+    return () => {
+      setIsMountedMap(fieldName, false);
+      abortValidation(fieldName);
+    };
+  }, [abortValidation, options.name, setIsMountedMap, validate]);
 
   // Create field handlers
-  const handleChange = (value: T[K]) => {
-    setValue(options.name, value);
-  };
+  const handleChange = useCallback(
+    (value: T[K]) => {
+      setValue(options.name, value);
+    },
+    [options.name, setValue],
+  );
 
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     submit([options.name]);
-  };
+  }, [options.name, submit]);
 
-  const handleBlur = () => {
+  const handleBlur = useCallback(() => {
     validate(options.name, "blur");
-  };
+  }, [options.name, validate]);
 
   // Create form API
-  const formApi: Prettify<FormApi<T>> = {
-    submit: (fields?: readonly (keyof T)[]) => {
-      submit(fields);
-    },
-  };
+  const formApi: Prettify<FormApi<T>> = useMemo(
+    () => ({
+      submit: (fields?: readonly (keyof T)[]) => {
+        submit(fields);
+      },
+    }),
+    [submit],
+  );
 
   return {
     name: options.name,
