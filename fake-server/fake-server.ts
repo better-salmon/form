@@ -41,17 +41,15 @@ const server = createServer((req, res) => {
 
   switch (pathname) {
     case "/ok": {
-      console.log(
-        `[${new Date().toISOString()}] GET /ok ${delay ? `(delay: ${delay}ms)` : ""}`,
-      );
+      const delayMsg = delay ? `(delay: ${delay}ms)` : "";
+      console.log(`[${new Date().toISOString()}] GET /ok ${delayMsg}`);
       sendResponse(200, "Success");
       break;
     }
 
     case "/error": {
-      console.log(
-        `[${new Date().toISOString()}] GET /error ${delay ? `(delay: ${delay}ms)` : ""}`,
-      );
+      const delayMsg = delay ? `(delay: ${delay}ms)` : "";
+      console.log(`[${new Date().toISOString()}] GET /error ${delayMsg}`);
       sendResponse(500, "Internal Server Error");
       break;
     }

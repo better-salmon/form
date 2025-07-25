@@ -1,19 +1,13 @@
-import { useSubscribeTo } from "@/hooks/my-form";
+import { useFieldDependencies } from "@/hooks/my-form";
 
 export function NextButton() {
-  const fields = useSubscribeTo({
-    dependencies: ["email", "phone", "name"],
-  });
+  const dependencies = useFieldDependencies(["email", "name", "phone"]);
 
-  const isSomeValidating = Object.values(fields).some(
-    (field) => field.validationState.type === "validating",
+  const isDisabled = Object.values(dependencies).some(
+    (field) =>
+      field.validationState.type === "invalid" ||
+      field.validationState.type === "warning",
   );
-
-  const isEveryDone = Object.values(fields).every(
-    (field) => field.validationState.type === "done",
-  );
-
-  const isDisabled = isSomeValidating || !isEveryDone;
 
   return (
     <button
