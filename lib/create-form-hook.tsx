@@ -231,8 +231,11 @@ export type IsMountedMap<T extends DefaultValues> = {
 // API TYPES
 // ============================================================================
 
-export type FormApi<T extends DefaultValues> = {
+export type FormApi<T extends DefaultValues, K extends keyof T = keyof T> = {
   submit: (fields?: readonly (keyof T)[]) => void;
+  getField: <F extends Exclude<keyof T, K>>(
+    field: F,
+  ) => Prettify<Field<T[F]> & { isMounted: boolean }>;
 };
 
 export type FieldApi<T extends DefaultValues, K extends keyof T> = {
@@ -242,7 +245,7 @@ export type FieldApi<T extends DefaultValues, K extends keyof T> = {
   handleSubmit: () => void;
   handleBlur: () => void;
   meta: Field<T[K]>["meta"];
-  formApi: Prettify<FormApi<T>>;
+  formApi: Prettify<FormApi<T, K>>;
   validationState: Field<T[K]>["validationState"];
 };
 
@@ -284,6 +287,9 @@ export type Actions<T extends DefaultValues> = {
     field: K,
     standardSchema?: StandardSchemaV1<T[K]>,
   ) => void;
+  getField: <F extends keyof T>(
+    field: F,
+  ) => Prettify<Field<T[F]> & { isMounted: boolean }>;
 };
 
 // ============================================================================
@@ -1034,6 +1040,20 @@ function createFormStoreMutative<T extends DefaultValues>(
             standardSchemas[field] = standardSchema;
           });
         },
+
+        // ======================================================================
+        // GETTER ACTIONS
+        // ======================================================================
+
+        /** Gets field data with mounted status */
+        getField: (field) => {
+          const state = get();
+          const targetField = state.fieldsMap[field];
+          return {
+            ...targetField,
+            isMounted: state.isMountedMap[field],
+          };
+        },
       };
     }),
   );
@@ -1141,6 +1161,7 @@ function useField<T extends DefaultValues, K extends keyof T>(
   );
   const setIsMountedMap = useStore(formStore, (state) => state.setIsMountedMap);
   const abortValidation = useStore(formStore, (state) => state.abortValidation);
+  const getField = useStore(formStore, (state) => state.getField);
 
   useIsomorphicEffect(() => {
     setValidatorsMap(options.name, {
@@ -1190,8 +1211,9 @@ function useField<T extends DefaultValues, K extends keyof T>(
   const formApi = useMemo(
     () => ({
       submit,
+      getField,
     }),
-    [submit],
+    [submit, getField],
   );
 
   return {
