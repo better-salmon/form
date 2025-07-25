@@ -60,6 +60,7 @@ export default tseslint.config([
         { allowNumber: true },
       ],
       "@typescript-eslint/no-invalid-void-type": "off",
+      "@typescript-eslint/consistent-type-definitions": ["error", "type"],
       "sonarjs/function-return-type": "off",
     },
   },
