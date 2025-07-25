@@ -9,6 +9,7 @@ import {
   standardValidate,
   standardValidateAsync,
 } from "@lib/standard-validate";
+import { dedupePrimitiveArray } from "@lib/dedupe-primiteve-array";
 
 // ============================================================================
 // CONSTANTS
@@ -227,6 +228,13 @@ export type IsMountedMap<T extends DefaultValues> = {
   [K in keyof T]: boolean;
 };
 
+export type FieldDependenciesMap<
+  T extends DefaultValues,
+  K extends readonly (keyof T)[],
+> = {
+  [P in K[number]]: Prettify<Field<T[P]> & { isMounted: boolean }>;
+};
+
 // ============================================================================
 // API TYPES
 // ============================================================================
@@ -352,9 +360,9 @@ export type CreateFormHookResult<T extends DefaultValues> = {
   useField: <K extends keyof T>(
     options: UseFieldOptions<T, K>,
   ) => Prettify<FieldApi<T, K>>;
-  useFieldDependencies: <K extends readonly (keyof T)[]>(
+  useFieldDependencies: <K extends (keyof T)[]>(
     dependencies?: K,
-  ) => Prettify<Pick<FieldsMap<T>, K[number]>>;
+  ) => FieldDependenciesMap<T, K>;
 };
 
 // ============================================================================
@@ -1099,27 +1107,43 @@ function Field<T extends DefaultValues, K extends keyof T>(
 // HOOKS
 // ============================================================================
 
-function useFieldDependencies<
-  T extends DefaultValues,
-  K extends readonly (keyof T)[],
->(dependencies?: K): Pick<FieldsMap<T>, K[number]> {
+function useFieldDependencies<T extends DefaultValues, K extends (keyof T)[]>(
+  dependencies?: K,
+): FieldDependenciesMap<T, K> {
   const formStore = use(FormContext) as StoreApi<Store<T> & Actions<T>> | null;
 
   if (!formStore) {
     throw new Error("FormProvider is not found");
   }
 
-  const deps = dependencies ?? ([] as (keyof T)[]);
+  const deps = dedupePrimitiveArray(dependencies ?? []);
 
-  return useStore(
+  const fieldsMap = useStore(
     formStore,
     useShallow(
       (state: Store<T>) =>
         Object.fromEntries(
           deps.map((dependency) => [dependency, state.fieldsMap[dependency]]),
-        ) as Pick<FieldsMap<T>, K[number]>,
+        ) as FieldsMap<T>,
     ),
   );
+
+  const isMountedMap = useStore(
+    formStore,
+    useShallow((state: Store<T>) =>
+      deps.map((dependency) => state.isMountedMap[dependency]),
+    ),
+  );
+
+  return Object.fromEntries(
+    deps.map((dependency, index) => [
+      dependency,
+      {
+        ...fieldsMap[dependency],
+        isMounted: isMountedMap[index],
+      },
+    ]),
+  ) as FieldDependenciesMap<T, K>;
 }
 
 /**

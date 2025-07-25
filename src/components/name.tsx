@@ -20,8 +20,8 @@ const nameFieldOptions = {
     console.log("validator", props);
     const issues = props.validateWithStandardSchema();
 
-    const phone = props.formApi.getField("email");
-    console.log("phone", phone);
+    const email = props.formApi.getField("email");
+    console.log("email", email);
 
     switch (props.action) {
       case "change": {
