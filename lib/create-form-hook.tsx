@@ -29,12 +29,12 @@ type DefaultValues = Record<string, unknown>;
 // RUNNING VALIDATION TYPES
 // ============================================================================
 
-interface RunningValidation<T = unknown> {
+type RunningValidation<T = unknown> = {
   stateSnapshot: T;
   abortController?: AbortController;
   timeoutId?: NodeJS.Timeout;
   validationId: number;
-}
+};
 
 type RunningValidationsMap<T extends DefaultValues> = {
   [K in keyof T]?: RunningValidation<T[K]>;
@@ -46,31 +46,32 @@ type RunningValidationsMap<T extends DefaultValues> = {
 
 type Action = "change" | "blur" | "submit" | "mount";
 
-interface InvalidState {
+type InvalidState = {
   type: "invalid";
   message: string;
-}
+};
 
-interface WarningState {
+type WarningState = {
   type: "warning";
   message: string;
-}
+};
 
-interface ValidState {
+type ValidState = {
   type: "valid";
-}
+  message?: string;
+};
 
-interface PendingState {
+type PendingState = {
   type: "pending";
-}
+};
 
-interface WaitingState {
+type WaitingState = {
   type: "waiting";
-}
+};
 
-interface CheckingState {
+type CheckingState = {
   type: "checking";
-}
+};
 
 type FieldState =
   | InvalidState
@@ -80,29 +81,29 @@ type FieldState =
   | WaitingState
   | CheckingState;
 
-interface SkipValidationFlowControl {
+type SkipValidationFlowControl = {
   type: "async-validator";
   strategy: "skip";
-}
+};
 
-interface ForceValidationFlowControl {
+type ForceValidationFlowControl = {
   type: "async-validator";
   strategy: "force";
   debounceMs?: number;
-}
+};
 
-interface AutoValidationFlowControl {
+type AutoValidationFlowControl = {
   type: "async-validator";
   strategy: "auto";
   debounceMs?: number;
-}
+};
 
 type ValidationFlowControl =
   | SkipValidationFlowControl
   | ForceValidationFlowControl
   | AutoValidationFlowControl;
 
-export interface Field<T = unknown> {
+export type Field<T = unknown> = {
   value: T;
   meta: {
     isTouched: boolean;
@@ -110,9 +111,9 @@ export interface Field<T = unknown> {
     numberOfSubmissions: number;
   };
   validationState: FieldState;
-}
+};
 
-interface FieldValidatorProps<T extends DefaultValues, K extends keyof T> {
+type FieldValidatorProps<T extends DefaultValues, K extends keyof T> = {
   action: Action;
   value: T[K];
   meta: Field<T[K]>["meta"];
@@ -132,9 +133,9 @@ interface FieldValidatorProps<T extends DefaultValues, K extends keyof T> {
         | undefined;
     };
   };
-}
+};
 
-interface FieldAsyncValidatorProps<T extends DefaultValues, K extends keyof T> {
+type FieldAsyncValidatorProps<T extends DefaultValues, K extends keyof T> = {
   action: Action;
   value: T[K];
   meta: Field<T[K]>["meta"];
@@ -155,7 +156,7 @@ interface FieldAsyncValidatorProps<T extends DefaultValues, K extends keyof T> {
       >;
     };
   };
-}
+};
 
 type SyncValidatorResult =
   | Exclude<FieldState, WaitingState | CheckingState>
@@ -224,11 +225,11 @@ export type StandardSchemasMap<T extends DefaultValues> = {
 // API TYPES
 // ============================================================================
 
-export interface FormApi<T extends DefaultValues> {
+export type FormApi<T extends DefaultValues> = {
   submit: (fields?: readonly (keyof T)[]) => void;
-}
+};
 
-export interface FieldApi<T extends DefaultValues, K extends keyof T> {
+export type FieldApi<T extends DefaultValues, K extends keyof T> = {
   name: K;
   value: T[K];
   handleChange: (value: T[K]) => void;
@@ -237,13 +238,13 @@ export interface FieldApi<T extends DefaultValues, K extends keyof T> {
   meta: Field<T[K]>["meta"];
   formApi: Prettify<FormApi<T>>;
   validationState: Field<T[K]>["validationState"];
-}
+};
 
 // ============================================================================
 // STORE TYPES
 // ============================================================================
 
-export interface Store<T extends DefaultValues> {
+export type Store<T extends DefaultValues> = {
   fieldsMap: FieldsMap<T>;
   defaultValues: T;
   validatorsMap: ValidatorsMap<T>;
@@ -253,9 +254,9 @@ export interface Store<T extends DefaultValues> {
   lastValidatedNumberOfChanges: LastValidatedNumberOfChangesMap<T>;
   validationIds: ValidationIdsMap<T>;
   standardSchemasMap: StandardSchemasMap<T>;
-}
+};
 
-export interface Actions<T extends DefaultValues> {
+export type Actions<T extends DefaultValues> = {
   setValue: <K extends keyof T>(field: K, value: T[K]) => void;
   submit: (fields?: readonly (keyof T)[]) => void;
   setDefaultValues: (defaultValues: T) => void;
@@ -274,49 +275,53 @@ export interface Actions<T extends DefaultValues> {
     field: K,
     standardSchema?: StandardSchemaV1<T[K]>,
   ) => void;
-}
+};
 
 // ============================================================================
 // COMPONENT & HOOK OPTION TYPES
 // ============================================================================
 
-export interface UseFormOptions<T extends DefaultValues> {
+export type UseFormOptions<T extends DefaultValues> = {
   defaultValues: T;
-}
+};
 
-export interface UseFormResult<T extends DefaultValues> {
+export type UseFormResult<T extends DefaultValues> = {
   Field: <K extends keyof T>(props: FieldProps<T, K>) => React.ReactNode;
   formStore: ReturnType<typeof createFormStoreMutative<T>>;
   Form: (props: React.ComponentProps<"form">) => React.ReactElement;
-}
+};
 
 // When asyncValidator is provided, validator can return validation flow controls
-export interface UseFieldOptionsWithAsync<
+export type UseFieldOptionsWithAsync<
   T extends DefaultValues,
   K extends keyof T,
-> {
+> = {
   name: K;
   validator?: ValidatorWithFlowControl<T, K>;
   asyncValidator: AsyncValidator<T, K>;
   debounceMs?: number;
   standardSchema?: StandardSchemaV1<T[K]>;
-}
+};
 
 // When asyncValidator is not provided, validator cannot return validation flow controls
-export interface UseFieldOptionsWithoutAsync<
+export type UseFieldOptionsWithoutAsync<
   T extends DefaultValues,
   K extends keyof T,
-> {
+> = {
   name: K;
   validator?: ValidatorWithoutFlowControl<T, K>;
   asyncValidator?: never;
   debounceMs?: never;
   standardSchema?: StandardSchemaV1<T[K]>;
-}
+};
 
 export type UseFieldOptions<T extends DefaultValues, K extends keyof T> =
   | UseFieldOptionsWithAsync<T, K>
   | UseFieldOptionsWithoutAsync<T, K>;
+
+export type FieldOptionsInput<T extends DefaultValues> = {
+  [K in keyof T]: UseFieldOptions<T, K> & { name: K };
+}[keyof T];
 
 export type FieldProps<
   T extends DefaultValues,
@@ -325,12 +330,12 @@ export type FieldProps<
   render: (props: Prettify<FieldApi<T, K>>) => React.ReactNode;
 };
 
-export interface CreateFormHookResult<T extends DefaultValues> {
+export type CreateFormHookResult<T extends DefaultValues> = {
   useForm: (options: UseFormOptions<T>) => UseFormResult<T>;
   useField: <K extends keyof T>(
     options: UseFieldOptions<T, K>,
   ) => Prettify<FieldApi<T, K>>;
-}
+};
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -484,7 +489,7 @@ function createFormStoreMutative<T extends DefaultValues>(
       ) {
         switch (result.type) {
           case "valid": {
-            setFieldState(field, { type: "valid" });
+            setFieldState(field, { type: "valid", message: result.message });
             cleanupValidation(field);
             break;
           }

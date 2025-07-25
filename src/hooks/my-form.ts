@@ -1,10 +1,14 @@
-import { createFormHook } from "@lib/create-form-hook";
+import { createFormHook, type FieldOptionsInput } from "@lib/create-form-hook";
 
-export const { useForm, useField } = createFormHook<{
+export type FormType = {
   name: {
     firstName: string;
     lastName: string;
   };
   email: string;
   phone: string | undefined;
-}>();
+};
+
+export type FieldOptions = FieldOptionsInput<FormType>;
+
+export const { useForm, useField } = createFormHook<FormType>();

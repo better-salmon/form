@@ -1,5 +1,6 @@
-import { useField } from "@/hooks/my-form";
+import { useField, type FieldOptions } from "@/hooks/my-form";
 import { cn } from "@/utils/cn";
+
 import { z } from "zod";
 
 const NameSchema = z.object({
@@ -10,63 +11,65 @@ const NameSchema = z.object({
   lastName: z.string().min(1, "Last name is required"),
 });
 
-export function Name() {
-  const field = useField({
-    name: "name",
-    debounceMs: 1000,
-    standardSchema: NameSchema,
-    validator: (props) => {
-      console.log("validator", props);
-      const issues = props.validateWithStandardSchema();
+const nameFieldOptions = {
+  name: "name",
+  debounceMs: 1000,
+  standardSchema: NameSchema,
+  validator: (props) => {
+    console.log("validator", props);
+    const issues = props.validateWithStandardSchema();
 
-      const phone = props.formApi.getField("email");
-      console.log("phone", phone);
+    const phone = props.formApi.getField("email");
+    console.log("phone", phone);
 
-      switch (props.action) {
-        case "change": {
-          if (issues?.length && issues[0].message) {
-            return {
-              type: "warning",
-              message: issues[0].message,
-            };
-          }
+    switch (props.action) {
+      case "change": {
+        if (issues?.length && issues[0].message) {
           return {
-            type: "pending",
+            type: "warning",
+            message: issues[0].message,
           };
         }
-        case "submit": {
-          return {
-            type: "async-validator",
-            strategy: "auto",
-            debounceMs: 1000,
-          };
-        }
-        case "mount": {
-          return {
-            type: "pending",
-          };
-        }
+        return {
+          type: "pending",
+        };
       }
-    },
-    asyncValidator: async (props) => {
-      console.log("asyncValidator", props);
+      case "submit": {
+        return {
+          type: "async-validator",
+          strategy: "auto",
+          debounceMs: 1000,
+        };
+      }
+      case "mount": {
+        return {
+          type: "pending",
+        };
+      }
+    }
+  },
+  asyncValidator: async (props) => {
+    console.log("asyncValidator", props);
 
-      const email = props.formApi.getField("email");
-      console.log("email async", email);
+    const email = props.formApi.getField("email");
+    console.log("email async", email);
 
-      await fetch(
-        `http://localhost:3001/ok?delay=1000&value=${props.value.firstName}`,
-        {
-          signal: props.getAbortSignal(),
-        },
-      );
+    await fetch(
+      `http://localhost:3001/ok?delay=1000&value=${props.value.firstName}`,
+      {
+        signal: props.getAbortSignal(),
+      },
+    );
 
-      return {
-        type: "warning",
-        message: "Name is too long",
-      };
-    },
-  });
+    return {
+      type: "warning",
+      message: "Name is too long",
+    };
+  },
+} satisfies FieldOptions;
+
+export function Name() {
+  const field = useField(nameFieldOptions);
 
   return (
     <label className="flex flex-col gap-2">
