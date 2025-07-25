@@ -310,6 +310,7 @@ export type UseFieldOptionsWithAsync<
   asyncValidator: AsyncValidator<T, K>;
   debounceMs?: number;
   standardSchema?: StandardSchemaV1<T[K]>;
+  dependencies?: readonly Exclude<keyof T, K>[];
 };
 
 // When asyncValidator is not provided, validator cannot return validation flow controls
@@ -322,6 +323,7 @@ export type UseFieldOptionsWithoutAsync<
   asyncValidator?: never;
   debounceMs?: never;
   standardSchema?: StandardSchemaV1<T[K]>;
+  dependencies?: readonly Exclude<keyof T, K>[];
 };
 
 export type UseFieldOptions<T extends DefaultValues, K extends keyof T> =
@@ -344,6 +346,9 @@ export type CreateFormHookResult<T extends DefaultValues> = {
   useField: <K extends keyof T>(
     options: UseFieldOptions<T, K>,
   ) => Prettify<FieldApi<T, K>>;
+  useFieldDependencies: <K extends readonly (keyof T)[]>(
+    dependencies?: K,
+  ) => Prettify<Pick<FieldsMap<T>, K[number]>>;
 };
 
 // ============================================================================
@@ -1074,6 +1079,29 @@ function Field<T extends DefaultValues, K extends keyof T>(
 // HOOKS
 // ============================================================================
 
+function useFieldDependencies<
+  T extends DefaultValues,
+  K extends readonly (keyof T)[],
+>(dependencies?: K): Pick<FieldsMap<T>, K[number]> {
+  const formStore = use(FormContext) as StoreApi<Store<T> & Actions<T>> | null;
+
+  if (!formStore) {
+    throw new Error("FormProvider is not found");
+  }
+
+  const deps = dependencies ?? ([] as (keyof T)[]);
+
+  return useStore(
+    formStore,
+    useShallow(
+      (state: Store<T>) =>
+        Object.fromEntries(
+          deps.map((dependency) => [dependency, state.fieldsMap[dependency]]),
+        ) as Pick<FieldsMap<T>, K[number]>,
+    ),
+  );
+}
+
 /**
  * Hook to access and manage a specific form field
  */
@@ -1090,6 +1118,13 @@ function useField<T extends DefaultValues, K extends keyof T>(
   const field = useStore(
     formStore,
     useShallow((state: Store<T>) => state.fieldsMap[options.name]),
+  );
+
+  useStore(
+    formStore,
+    useShallow((state: Store<T>) =>
+      options.dependencies?.map((dependency) => state.fieldsMap[dependency]),
+    ),
   );
 
   // Subscribe to actions
@@ -1115,8 +1150,8 @@ function useField<T extends DefaultValues, K extends keyof T>(
     });
     setStandardSchemasMap(options.name, options.standardSchema);
   }, [
-    options.name,
     options.debounceMs,
+    options.name,
     options.standardSchema,
     options.validator,
     options.asyncValidator,
@@ -1152,11 +1187,9 @@ function useField<T extends DefaultValues, K extends keyof T>(
   }, [options.name, validate]);
 
   // Create form API
-  const formApi: Prettify<FormApi<T>> = useMemo(
+  const formApi = useMemo(
     () => ({
-      submit: (fields?: readonly (keyof T)[]) => {
-        submit(fields);
-      },
+      submit,
     }),
     [submit],
   );
@@ -1212,5 +1245,6 @@ export function createFormHook<
   return {
     useForm,
     useField,
+    useFieldDependencies,
   };
 }

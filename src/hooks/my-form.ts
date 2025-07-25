@@ -11,4 +11,5 @@ export type FormType = {
 
 export type FieldOptions = FieldOptionsInput<FormType>;
 
-export const { useForm, useField } = createFormHook<FormType>();
+export const { useForm, useField, useFieldDependencies } =
+  createFormHook<FormType>();
