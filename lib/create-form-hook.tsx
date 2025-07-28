@@ -1116,34 +1116,32 @@ function useFieldDependencies<T extends DefaultValues, K extends (keyof T)[]>(
     throw new Error("FormProvider is not found");
   }
 
-  const deps = dedupePrimitiveArray(dependencies ?? []);
-
-  const fieldsMap = useStore(
-    formStore,
-    useShallow(
-      (state: Store<T>) =>
-        Object.fromEntries(
-          deps.map((dependency) => [dependency, state.fieldsMap[dependency]]),
-        ) as FieldsMap<T>,
-    ),
+  const deduplicatedDependencies = useMemo(
+    () => dedupePrimitiveArray(dependencies ?? []),
+    [dependencies],
   );
 
-  const isMountedMap = useStore(
+  const { fieldsMap, isMountedMap } = useStore(
     formStore,
-    useShallow((state: Store<T>) =>
-      deps.map((dependency) => state.isMountedMap[dependency]),
-    ),
+    useShallow((state: Store<T>) => ({
+      fieldsMap: state.fieldsMap,
+      isMountedMap: state.isMountedMap,
+    })),
   );
 
-  return Object.fromEntries(
-    deps.map((dependency, index) => [
-      dependency,
-      {
-        ...fieldsMap[dependency],
-        isMounted: isMountedMap[index],
-      },
-    ]),
-  ) as FieldDependenciesMap<T, K>;
+  return useMemo(
+    () =>
+      Object.fromEntries(
+        deduplicatedDependencies.map((dependency) => [
+          dependency,
+          {
+            ...fieldsMap[dependency],
+            isMounted: isMountedMap[dependency],
+          },
+        ]),
+      ) as FieldDependenciesMap<T, K>,
+    [deduplicatedDependencies, fieldsMap, isMountedMap],
+  );
 }
 
 /**
