@@ -4,7 +4,6 @@ import { cn } from "@/utils/cn";
 export function Email() {
   const field = useField({
     name: "email",
-    validators: {},
   });
 
   return (
@@ -14,7 +13,6 @@ export function Email() {
         <input
           type="email"
           name={field.name}
-          data-done={field.validationState.type === "done" ? "true" : "false"}
           value={field.value}
           onBlur={field.handleBlur}
           onChange={(e) => {
@@ -30,18 +28,20 @@ export function Email() {
           className={cn(
             "rounded-md border-2 border-gray-300 p-2 pr-10 outline-none",
             {
-              "border-red-500": field.validationState.type === "error",
-              "border-green-500": field.validationState.type === "done",
-              "border-blue-500": field.validationState.type === "validating",
-              "border-yellow-500": field.validationState.type === "debouncing",
+              "border-red-500": field.validationState.type === "invalid",
+              "border-green-500": field.validationState.type === "valid",
+              "border-blue-500": field.validationState.type === "checking",
+              "border-violet-500": field.validationState.type === "waiting",
+              "border-orange-500": field.validationState.type === "warning",
             },
           )}
         />
         <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-          {field.validationState.type === "validating" && <span>🤔</span>}
-          {field.validationState.type === "done" && <span>✅</span>}
-          {field.validationState.type === "error" && <span>❌</span>}
-          {field.validationState.type === "debouncing" && <span>⏰</span>}
+          {field.validationState.type === "checking" && <span>🤔</span>}
+          {field.validationState.type === "valid" && <span>✅</span>}
+          {field.validationState.type === "invalid" && <span>❌</span>}
+          {field.validationState.type === "waiting" && <span>⏰</span>}
+          {field.validationState.type === "warning" && <span>⚠️</span>}
         </div>
       </div>
     </label>
