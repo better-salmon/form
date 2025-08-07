@@ -1,21 +1,24 @@
 import { createFormHook } from "@lib/create-form-hook";
 import { cn } from "@/utils/cn";
+import type { Branded } from "@/types/types";
+
+type UserType = "admin" | "user" | "guest" | "";
 
 // Create typed form hook
 const { useForm } = createFormHook<{
-  userType: "admin" | "user" | "guest" | "";
-  email: string;
-  password: string;
-  confirmPassword: string;
+  userType: Branded<UserType, "userType">;
+  email: Branded<string, "email">;
+  password: Branded<string, "password">;
+  confirmPassword: Branded<string, "password">;
 }>();
 
 export function WatcherDemo() {
   const { Form, Field } = useForm({
     defaultValues: {
-      userType: "",
-      email: "",
-      password: "",
-      confirmPassword: "",
+      userType: "" as Branded<UserType, "userType">,
+      email: "" as Branded<string, "email">,
+      password: "" as Branded<string, "password">,
+      confirmPassword: "" as Branded<string, "password">,
     },
   });
 
@@ -118,7 +121,7 @@ export function WatcherDemo() {
                       currentField.value &&
                       !currentField.value.includes("@admin.com"))
                   ) {
-                    formApi.setValue("email", "");
+                    formApi.setValue("email", "" as Branded<string, "email">);
                   }
                   formApi.validate("email");
                   break;
@@ -142,7 +145,9 @@ export function WatcherDemo() {
                   id={field.name}
                   value={field.value}
                   onChange={(e) => {
-                    field.handleChange(e.target.value);
+                    field.handleChange(
+                      e.target.value as Branded<string, "email">,
+                    );
                   }}
                   onBlur={field.handleBlur}
                   onKeyDown={(e) => {
@@ -220,7 +225,9 @@ export function WatcherDemo() {
                   id={field.name}
                   value={field.value}
                   onChange={(e) => {
-                    field.handleChange(e.target.value);
+                    field.handleChange(
+                      e.target.value as Branded<string, "password">,
+                    );
                   }}
                   onBlur={field.handleBlur}
                   onKeyDown={(e) => {
@@ -303,7 +310,9 @@ export function WatcherDemo() {
                   id={field.name}
                   value={field.value}
                   onChange={(e) => {
-                    field.handleChange(e.target.value);
+                    field.handleChange(
+                      e.target.value as Branded<string, "password">,
+                    );
                   }}
                   onBlur={field.handleBlur}
                   onKeyDown={(e) => {
