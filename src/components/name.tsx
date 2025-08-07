@@ -16,11 +16,8 @@ const nameFieldOptions = {
   debounceMs: 1000,
   standardSchema: NameSchema,
   validator: (props) => {
-    console.log("validator", props);
+    console.log("sync validator", props);
     const issues = props.validateWithStandardSchema();
-
-    const email = props.formApi.getField("email");
-    console.log("email", email);
 
     switch (props.action) {
       case "change": {
@@ -51,10 +48,7 @@ const nameFieldOptions = {
     }
   },
   asyncValidator: async (props) => {
-    console.log("asyncValidator", props);
-
-    const email = props.formApi.getField("email");
-    console.log("email async", email);
+    console.log("async validator", props);
 
     await fetch(
       `http://localhost:3001/ok?delay=1000&value=${props.value.firstName}`,
@@ -96,7 +90,7 @@ export function Name() {
             });
           }}
           className={cn(
-            "rounded-md border-2 border-gray-300 p-2 pr-10 outline-none",
+            "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none",
             {
               "border-red-500": field.validationState.type === "invalid",
               "border-green-500": field.validationState.type === "valid",

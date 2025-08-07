@@ -26,7 +26,7 @@ export function Email() {
             }
           }}
           className={cn(
-            "rounded-md border-2 border-gray-300 p-2 pr-10 outline-none",
+            "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none",
             {
               "border-red-500": field.validationState.type === "invalid",
               "border-green-500": field.validationState.type === "valid",

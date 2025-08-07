@@ -27,7 +27,7 @@ export function Phone() {
             }
           }}
           className={cn(
-            "rounded-md border-2 border-gray-300 p-2 pr-10 outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500",
+            "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500",
             {
               "border-red-500": field.validationState.type === "invalid",
               "border-green-500": field.validationState.type === "valid",

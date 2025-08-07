@@ -62,6 +62,8 @@ export default tseslint.config([
       "@typescript-eslint/no-invalid-void-type": "off",
       "@typescript-eslint/consistent-type-definitions": ["error", "type"],
       "sonarjs/function-return-type": "off",
+      // TODO: remove this override when finalizing the work on the lib
+      "sonarjs/no-nested-functions": ["error", { threshold: 5 }],
     },
   },
 ]);
