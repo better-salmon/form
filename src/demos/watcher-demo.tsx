@@ -104,36 +104,33 @@ export function WatcherDemo() {
 
             return { type: "valid" };
           }}
-          watchFields={[
-            {
-              field: "userType",
-              do: ({ when, watchedValue, currentField, formApi }) => {
-                console.log(
-                  `Email watcher triggered on ${when} with userType: ${watchedValue}`,
-                );
+          watchFields={{
+            userType: ({ action, watchedValue, currentField, formApi }) => {
+              console.log(
+                `Email watcher triggered on ${action} with userType: ${watchedValue}`,
+              );
 
-                switch (when) {
-                  case "change": {
-                    if (
-                      watchedValue === "guest" ||
-                      (watchedValue === "admin" &&
-                        currentField.value &&
-                        !currentField.value.includes("@admin.com"))
-                    ) {
-                      formApi.setValue("email", "");
-                    }
-                    formApi.validate("email");
-                    break;
+              switch (action) {
+                case "change": {
+                  if (
+                    watchedValue === "guest" ||
+                    (watchedValue === "admin" &&
+                      currentField.value &&
+                      !currentField.value.includes("@admin.com"))
+                  ) {
+                    formApi.setValue("email", "");
                   }
-
-                  case "submit": {
-                    formApi.validate("email");
-                    break;
-                  }
+                  formApi.validate("email");
+                  break;
                 }
-              },
+
+                case "submit": {
+                  formApi.validate("email");
+                  break;
+                }
+              }
             },
-          ]}
+          }}
         >
           {(field) => (
             <label className="flex flex-col gap-2">
@@ -279,25 +276,22 @@ export function WatcherDemo() {
             }
             return { type: "valid", message: "Passwords match!" };
           }}
-          watchFields={[
-            {
-              field: "password",
-              do: ({ when, currentField, formApi }) => {
-                console.log(`ConfirmPassword watcher triggered on ${when}`);
+          watchFields={{
+            password: ({ action, currentField, formApi }) => {
+              console.log(`ConfirmPassword watcher triggered on ${action}`);
 
-                if (
-                  (when === "change" || when === "blur") && // Only validate if user has started typing
-                  currentField.value
-                ) {
-                  formApi.validate("confirmPassword");
-                }
+              if (
+                (action === "change" || action === "blur") && // Only validate if user has started typing
+                currentField.value
+              ) {
+                formApi.validate("confirmPassword");
+              }
 
-                if (when === "submit") {
-                  formApi.validate("confirmPassword");
-                }
-              },
+              if (action === "submit") {
+                formApi.validate("confirmPassword");
+              }
             },
-          ]}
+          }}
         >
           {(field) => (
             <label className="flex flex-col gap-2">

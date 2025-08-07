@@ -33,26 +33,26 @@ type DefaultValues = Record<string, unknown>;
 // WATCHER TYPES
 // ============================================================================
 
-type WatchFieldConfig<T extends DefaultValues, CurrentField extends keyof T> = {
-  [WatchedField in Exclude<keyof T, CurrentField>]: {
-    field: WatchedField;
-    do: (props: {
-      when: Action;
-      watchedValue: T[WatchedField];
-      watchedField: Prettify<Field<T[WatchedField]>>;
-      currentField: Prettify<Field<T[CurrentField]>>;
-      formApi: {
-        validate: (field: keyof T) => void;
-        setValue: <K extends keyof T>(field: K, value: T[K]) => void;
-        getField: <K extends keyof T>(
-          field: K,
-        ) => Prettify<Field<T[K]> & { isMounted: boolean }>;
-        reset: (field: keyof T) => void;
-        touch: (field: keyof T) => void;
-      };
-    }) => void;
-  };
-}[Exclude<keyof T, CurrentField>];
+type WatchFieldsConfig<
+  T extends DefaultValues,
+  CurrentField extends keyof T,
+> = {
+  [WatchedField in Exclude<keyof T, CurrentField>]?: (props: {
+    action: Action;
+    watchedValue: T[WatchedField];
+    watchedField: Prettify<Field<T[WatchedField]>>;
+    currentField: Prettify<Field<T[CurrentField]>>;
+    formApi: {
+      validate: (field: keyof T) => void;
+      setValue: <K extends keyof T>(field: K, value: T[K]) => void;
+      getField: <K extends keyof T>(
+        field: K,
+      ) => Prettify<Field<T[K]> & { isMounted: boolean }>;
+      reset: (field: keyof T) => void;
+      touch: (field: keyof T) => void;
+    };
+  }) => void;
+};
 
 // Clean watcher storage that executes with proper state context
 type StoredWatcher<T extends DefaultValues> = {
@@ -339,7 +339,7 @@ export type Actions<T extends DefaultValues> = {
   ) => Prettify<Field<T[F]> & { isMounted: boolean }>;
   registerWatchers: <K extends keyof T>(
     targetField: K,
-    watchFields: WatchFieldConfig<T, K>[],
+    watchFields: WatchFieldsConfig<T, K>,
   ) => void;
   unregisterWatchers: (targetField: keyof T) => void;
   executeWatchers: (watchedField: keyof T, action: Action) => void;
@@ -369,7 +369,7 @@ export type UseFieldOptionsWithAsync<
   asyncValidator: AsyncValidator<T, K>;
   debounceMs?: number;
   standardSchema?: StandardSchemaV1<T[K]>;
-  watchFields?: WatchFieldConfig<T, K>[];
+  watchFields?: WatchFieldsConfig<T, K>;
 };
 
 // When asyncValidator is not provided, validator cannot return validation flow controls
@@ -382,7 +382,7 @@ export type UseFieldOptionsWithoutAsync<
   asyncValidator?: never;
   debounceMs?: never;
   standardSchema?: StandardSchemaV1<T[K]>;
-  watchFields?: WatchFieldConfig<T, K>[];
+  watchFields?: WatchFieldsConfig<T, K>;
 };
 
 export type UseFieldOptions<T extends DefaultValues, K extends keyof T> =
@@ -1161,7 +1161,7 @@ function createFormStoreMutative<T extends DefaultValues>(
         /** Registers watchers for a field */
         registerWatchers: <K extends keyof T>(
           targetField: K,
-          watchFields: WatchFieldConfig<T, K>[],
+          watchFields: WatchFieldsConfig<T, K>,
         ) => {
           // Remove existing watchers for this target field first
           for (const [key, registrations] of watchersMap.entries()) {
@@ -1176,17 +1176,36 @@ function createFormStoreMutative<T extends DefaultValues>(
           }
 
           // Register new watchers for all actions
-          for (const config of watchFields) {
+          for (const [watchedField, callback] of Object.entries(
+            watchFields,
+          ) as [
+            keyof T,
+            (props: {
+              action: Action;
+              watchedValue: unknown;
+              watchedField: Prettify<Field>;
+              currentField: Prettify<Field<T[K]>>;
+              formApi: {
+                validate: (field: keyof T) => void;
+                setValue: <F extends keyof T>(field: F, value: T[F]) => void;
+                getField: <F extends keyof T>(
+                  field: F,
+                ) => Prettify<Field<T[F]> & { isMounted: boolean }>;
+                reset: (field: keyof T) => void;
+                touch: (field: keyof T) => void;
+              };
+            }) => void,
+          ][]) {
             for (const action of ACTIONS) {
-              const watchKey = `${String(config.field)}:${action}`;
+              const watchKey = `${watchedField as string}:${action}`;
               const existing = watchersMap.get(watchKey) ?? [];
 
               existing.push({
                 targetField,
-                watchedField: config.field,
+                watchedField,
                 execute: (action, getState, validateInternal) => {
                   const state = getState();
-                  const watchedFieldData = state.fieldsMap[config.field];
+                  const watchedFieldData = state.fieldsMap[watchedField];
                   const currentFieldData = state.fieldsMap[targetField];
 
                   const formApi = {
@@ -1211,9 +1230,9 @@ function createFormStoreMutative<T extends DefaultValues>(
                     },
                   };
 
-                  // Now we can call config.do with properly typed arguments
-                  config.do({
-                    when: action,
+                  // Call the callback with properly typed arguments
+                  callback({
+                    action,
                     watchedValue: watchedFieldData.value,
                     watchedField: watchedFieldData,
                     currentField: currentFieldData,
