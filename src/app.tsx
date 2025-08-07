@@ -1,5 +1,5 @@
 import "@/index.css";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { WatcherDemo } from "@/demos/watcher-demo";
 import { PasswordDemo } from "@/demos/password-demo";
 import { ContactDemo } from "@/demos/contact-demo";
@@ -26,48 +26,48 @@ const DEMOS = [
   },
 ] as const;
 
+type DemoNames = (typeof DEMOS)[number]["id"];
+type SidebarState = "show" | "collapsed";
+
 // Helper functions for URL state management
 function getUrlParams() {
   const params = new URLSearchParams(globalThis.location.search);
   return {
-    demo: params.get("demo") ?? "contact",
-    sidebar: params.get("sidebar") === "collapsed",
+    demo: (params.get("demo") ?? "contact") as DemoNames,
+    sidebar: (params.get("sidebar") ?? "show") as SidebarState,
   };
 }
 
-function updateUrlParams(demo: string, sidebarCollapsed: boolean) {
-  const params = new URLSearchParams();
+function updateUrlParams(demo: DemoNames, sidebarCollapsed: SidebarState) {
+  const searchParams = new URLSearchParams();
+
   if (demo !== "contact") {
-    params.set("demo", demo);
-  }
-  if (sidebarCollapsed) {
-    params.set("sidebar", "collapsed");
+    searchParams.set("demo", demo);
   }
 
-  const newUrl = params.toString()
-    ? `${globalThis.location.pathname}?${params.toString()}`
-    : globalThis.location.pathname;
+  if (sidebarCollapsed === "collapsed") {
+    searchParams.set("sidebar", "collapsed");
+  }
 
-  globalThis.history.replaceState({}, "", newUrl);
+  const url = new URL(globalThis.location.href);
+
+  url.search = searchParams.toString();
+
+  globalThis.history.replaceState({}, "", url);
 }
 
 function App() {
   const urlParams = getUrlParams();
-  const [activeDemo, setActiveDemo] = useState<string>(urlParams.demo);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(urlParams.sidebar);
-  const [prevActiveDemo, setPrevActiveDemo] = useState<string | undefined>();
-  const [prevSidebarCollapsed, setPrevSidebarCollapsed] = useState<
-    boolean | undefined
-  >();
+  const [activeDemo, setActiveDemo] = useState<DemoNames>(urlParams.demo);
+  const [sidebarState, setSidebarCollapsed] = useState<SidebarState>(
+    urlParams.sidebar,
+  );
 
-  if (
-    prevActiveDemo !== activeDemo ||
-    prevSidebarCollapsed !== sidebarCollapsed
-  ) {
-    updateUrlParams(activeDemo, sidebarCollapsed);
-    setPrevActiveDemo(activeDemo);
-    setPrevSidebarCollapsed(sidebarCollapsed);
-  }
+  const sidebarCollapsed = sidebarState === "collapsed";
+
+  useEffect(() => {
+    updateUrlParams(activeDemo, sidebarState);
+  }, [activeDemo, sidebarState]);
 
   const ActiveComponent =
     DEMOS.find((demo) => demo.id === activeDemo)?.component ?? ContactDemo;
@@ -91,7 +91,9 @@ function App() {
           <button
             type="button"
             onClick={() => {
-              setSidebarCollapsed(!sidebarCollapsed);
+              setSidebarCollapsed((prev) =>
+                prev === "collapsed" ? "show" : "collapsed",
+              );
             }}
             className="cursor-pointer rounded-md bg-gray-100 p-2 text-gray-500 hover:text-gray-700"
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
