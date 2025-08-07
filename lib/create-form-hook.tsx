@@ -9,11 +9,14 @@ import {
   standardValidate,
   standardValidateAsync,
 } from "@lib/standard-validate";
-import { dedupePrimitiveArray } from "@lib/dedupe-primiteve-array";
+import { dedupePrimitiveArray } from "@lib/dedupe-primitive-array";
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
+
+// Register the callback for all possible actions
+const ACTIONS: Action[] = ["change", "blur", "submit", "mount"];
 
 // ============================================================================
 // UTILITY TYPES
@@ -25,6 +28,42 @@ type Prettify<T> = {
 } & {};
 
 type DefaultValues = Record<string, unknown>;
+
+// ============================================================================
+// WATCHER TYPES
+// ============================================================================
+
+type WatchFieldConfig<T extends DefaultValues, CurrentField extends keyof T> = {
+  [WatchedField in Exclude<keyof T, CurrentField>]: {
+    field: WatchedField;
+    do: (props: {
+      when: Action;
+      watchedValue: T[WatchedField];
+      watchedField: Prettify<Field<T[WatchedField]>>;
+      currentField: Prettify<Field<T[CurrentField]>>;
+      formApi: {
+        validate: (field: keyof T) => void;
+        setValue: <K extends keyof T>(field: K, value: T[K]) => void;
+        getField: <K extends keyof T>(
+          field: K,
+        ) => Prettify<Field<T[K]> & { isMounted: boolean }>;
+        reset: (field: keyof T) => void;
+        touch: (field: keyof T) => void;
+      };
+    }) => void;
+  };
+}[Exclude<keyof T, CurrentField>];
+
+// Clean watcher storage that executes with proper state context
+type StoredWatcher<T extends DefaultValues> = {
+  targetField: keyof T;
+  watchedField: keyof T;
+  execute: (
+    action: Action,
+    getState: () => Store<T> & Actions<T>,
+    validateInternal: (field: keyof T, action: Action) => void,
+  ) => void;
+};
 
 // ============================================================================
 // RUNNING VALIDATION TYPES
@@ -298,6 +337,12 @@ export type Actions<T extends DefaultValues> = {
   getField: <F extends keyof T>(
     field: F,
   ) => Prettify<Field<T[F]> & { isMounted: boolean }>;
+  registerWatchers: <K extends keyof T>(
+    targetField: K,
+    watchFields: WatchFieldConfig<T, K>[],
+  ) => void;
+  unregisterWatchers: (targetField: keyof T) => void;
+  executeWatchers: (watchedField: keyof T, action: Action) => void;
 };
 
 // ============================================================================
@@ -324,7 +369,7 @@ export type UseFieldOptionsWithAsync<
   asyncValidator: AsyncValidator<T, K>;
   debounceMs?: number;
   standardSchema?: StandardSchemaV1<T[K]>;
-  dependencies?: readonly Exclude<keyof T, K>[];
+  watchFields?: WatchFieldConfig<T, K>[];
 };
 
 // When asyncValidator is not provided, validator cannot return validation flow controls
@@ -337,7 +382,7 @@ export type UseFieldOptionsWithoutAsync<
   asyncValidator?: never;
   debounceMs?: never;
   standardSchema?: StandardSchemaV1<T[K]>;
-  dependencies?: readonly Exclude<keyof T, K>[];
+  watchFields?: WatchFieldConfig<T, K>[];
 };
 
 export type UseFieldOptions<T extends DefaultValues, K extends keyof T> =
@@ -396,9 +441,7 @@ function createInitialFieldsMap<T extends DefaultValues>(
 /**
  * Extracts field names from fields map
  */
-function getFieldNames<T extends DefaultValues>(
-  fieldsMap: FieldsMap<T>,
-): (keyof T)[] {
+function getFieldNames<T extends DefaultValues>(fieldsMap: FieldsMap<T>) {
   return Object.keys(fieldsMap) as (keyof T)[];
 }
 
@@ -412,8 +455,15 @@ function getFieldNames<T extends DefaultValues>(
 function createFormStoreMutative<T extends DefaultValues>(
   options: UseFormOptions<T>,
 ) {
-  return createStore<Store<T> & Actions<T>>()(
+  const store = createStore<Store<T> & Actions<T>>()(
     mutative((set, get) => {
+      // ========================================================================
+      // STORE-LOCAL WATCHER REGISTRY
+      // ========================================================================
+
+      /** Store-local registry to store watchers for this form instance */
+      const watchersMap = new Map<string, StoredWatcher<T>[]>();
+
       // ========================================================================
       // TYPED HELPER FUNCTIONS FOR CLEAN MUTATIONS
       // ========================================================================
@@ -454,9 +504,14 @@ function createFormStoreMutative<T extends DefaultValues>(
 
       /** Sets field validation state */
       function setFieldState(field: keyof T, state: FieldState) {
-        mutateFields((fields) => {
-          fields[field].validationState = state;
-        });
+        const currentState = get().fieldsMap[field].validationState;
+
+        // Only update if the validation state actually changed
+        if (!deepEqual(currentState, state)) {
+          mutateFields((fields) => {
+            fields[field].validationState = state;
+          });
+        }
       }
 
       // ========================================================================
@@ -871,7 +926,7 @@ function createFormStoreMutative<T extends DefaultValues>(
       }
 
       /** Main validation orchestrator - handles sync validation and triggers async validation */
-      function validate(field: keyof T, action: Action) {
+      function validateInternal(field: keyof T, action: Action) {
         const state = get();
 
         const currentField = state.fieldsMap[field];
@@ -962,23 +1017,33 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         /** Updates default values and initializes unset field values */
         setDefaultValues: (defaultValues) => {
-          set((state) => {
-            // Use Object.assign for proper draft mutation
-            Object.assign(state.defaultValues, defaultValues);
-            const fields = state.fieldsMap as FieldsMap<T>;
+          const currentDefaults = get().defaultValues;
 
-            for (const [field] of Object.entries(defaultValues)) {
-              fields[field as keyof T].value ??=
-                defaultValues[field as keyof T];
-            }
-          });
+          // Only update if default values actually changed
+          if (!deepEqual(currentDefaults, defaultValues)) {
+            set((state) => {
+              // Use Object.assign for proper draft mutation
+              Object.assign(state.defaultValues, defaultValues);
+              const fields = state.fieldsMap as FieldsMap<T>;
+
+              for (const [field] of Object.entries(defaultValues)) {
+                fields[field as keyof T].value ??=
+                  defaultValues[field as keyof T];
+              }
+            });
+          }
         },
 
         /** Sets validators for a specific field */
         setValidatorsMap: (field, validators) => {
-          mutateValidators((validatorsMap) => {
-            validatorsMap[field] = validators;
-          });
+          const currentValidators = get().validatorsMap[field];
+
+          // Only update if validators actually changed
+          if (!deepEqual(currentValidators, validators)) {
+            mutateValidators((validatorsMap) => {
+              validatorsMap[field] = validators;
+            });
+          }
         },
 
         // ======================================================================
@@ -986,9 +1051,14 @@ function createFormStoreMutative<T extends DefaultValues>(
         // ======================================================================
 
         setIsMountedMap: (field, isMounted) => {
-          mutateIsMountedMap((isMountedMap) => {
-            isMountedMap[field] = isMounted;
-          });
+          const currentIsMounted = get().isMountedMap[field];
+
+          // Only update if mounted state actually changed
+          if (currentIsMounted !== isMounted) {
+            mutateIsMountedMap((isMountedMap) => {
+              isMountedMap[field] = isMounted;
+            });
+          }
         },
 
         /** Updates field value and triggers validation */
@@ -1009,7 +1079,10 @@ function createFormStoreMutative<T extends DefaultValues>(
           });
 
           // Trigger validation after value change (reuse actions from state)
-          validate(field, "change");
+          validateInternal(field, "change");
+
+          // Execute watchers for this field change
+          get().executeWatchers(field, "change");
         },
 
         /** Submits specified fields (or all fields if none specified) */
@@ -1025,7 +1098,10 @@ function createFormStoreMutative<T extends DefaultValues>(
               fields[field].meta.numberOfSubmissions++;
             });
 
-            validate(field, "submit");
+            validateInternal(field, "submit");
+
+            // Execute watchers for this submit action
+            get().executeWatchers(field, "submit");
           }
         },
 
@@ -1034,19 +1110,34 @@ function createFormStoreMutative<T extends DefaultValues>(
         // ======================================================================
 
         /** Main validation orchestrator - handles sync validation and triggers async validation */
-        validate,
+        validate: (field, action) => {
+          validateInternal(field, action);
+
+          // Execute watchers for this validation action
+          get().executeWatchers(field, action);
+        },
 
         abortValidation: (field) => {
           cleanupValidation(field);
-          mutateFields((fields) => {
-            fields[field].validationState = { type: "pending" };
-          });
+          const currentState = get().fieldsMap[field].validationState;
+
+          // Only update if not already pending
+          if (currentState.type !== "pending") {
+            mutateFields((fields) => {
+              fields[field].validationState = { type: "pending" };
+            });
+          }
         },
 
         setStandardSchemasMap: (field, standardSchema) => {
-          mutateStandardSchemas((standardSchemas) => {
-            standardSchemas[field] = standardSchema;
-          });
+          const currentSchema = get().standardSchemasMap[field];
+
+          // Only update if schema actually changed
+          if (currentSchema !== standardSchema) {
+            mutateStandardSchemas((standardSchemas) => {
+              standardSchemas[field] = standardSchema;
+            });
+          }
         },
 
         // ======================================================================
@@ -1062,9 +1153,108 @@ function createFormStoreMutative<T extends DefaultValues>(
             isMounted: state.isMountedMap[field],
           };
         },
+
+        // ======================================================================
+        // STORE-LOCAL WATCHER HELPER FUNCTIONS
+        // ======================================================================
+
+        /** Registers watchers for a field */
+        registerWatchers: <K extends keyof T>(
+          targetField: K,
+          watchFields: WatchFieldConfig<T, K>[],
+        ) => {
+          // Remove existing watchers for this target field first
+          for (const [key, registrations] of watchersMap.entries()) {
+            const filtered = registrations.filter(
+              (reg) => reg.targetField !== targetField,
+            );
+            if (filtered.length === 0) {
+              watchersMap.delete(key);
+            } else {
+              watchersMap.set(key, filtered);
+            }
+          }
+
+          // Register new watchers for all actions
+          for (const config of watchFields) {
+            for (const action of ACTIONS) {
+              const watchKey = `${String(config.field)}:${action}`;
+              const existing = watchersMap.get(watchKey) ?? [];
+
+              existing.push({
+                targetField,
+                watchedField: config.field,
+                execute: (action, getState, validateInternal) => {
+                  const state = getState();
+                  const watchedFieldData = state.fieldsMap[config.field];
+                  const currentFieldData = state.fieldsMap[targetField];
+
+                  const formApi = {
+                    validate: (field: keyof T) => {
+                      validateInternal(field, action);
+                    },
+                    setValue: <K extends keyof T>(field: K, value: T[K]) => {
+                      state.setValue(field, value);
+                    },
+                    getField: <K extends keyof T>(field: K) =>
+                      state.getField(field),
+                    reset: (field: keyof T) => {
+                      const defaultValue = state.defaultValues[field];
+                      state.setValue(field, defaultValue);
+                    },
+                    touch: (field: keyof T) => {
+                      const fieldData = state.fieldsMap[field];
+                      if (!fieldData.meta.isTouched) {
+                        const currentValue = fieldData.value;
+                        state.setValue(field, currentValue);
+                      }
+                    },
+                  };
+
+                  // Now we can call config.do with properly typed arguments
+                  config.do({
+                    when: action,
+                    watchedValue: watchedFieldData.value,
+                    watchedField: watchedFieldData,
+                    currentField: currentFieldData,
+                    formApi,
+                  });
+                },
+              });
+
+              watchersMap.set(watchKey, existing);
+            }
+          }
+        },
+
+        /** Unregisters all watchers for a field */
+        unregisterWatchers: (targetField: keyof T) => {
+          for (const [key, registrations] of watchersMap.entries()) {
+            const filtered = registrations.filter(
+              (reg) => reg.targetField !== targetField,
+            );
+            if (filtered.length === 0) {
+              watchersMap.delete(key);
+            } else {
+              watchersMap.set(key, filtered);
+            }
+          }
+        },
+
+        /** Executes watchers for a watched field and action */
+        executeWatchers: (watchedField: keyof T, action: Action) => {
+          const watchKey = `${String(watchedField)}:${action}`;
+          const watchers = watchersMap.get(watchKey) ?? [];
+
+          for (const watcher of watchers) {
+            watcher.execute(action, get, validateInternal);
+          }
+        },
       };
     }),
   );
+
+  return store;
 }
 
 // ============================================================================
@@ -1156,34 +1346,39 @@ function useField<T extends DefaultValues, K extends keyof T>(
     throw new Error("FormProvider is not found");
   }
 
-  // Subscribe to field state
   const field = useStore(
     formStore,
     useShallow((state: Store<T>) => state.fieldsMap[options.name]),
   );
 
-  useStore(
+  const {
+    setValue,
+    submit,
+    setValidatorsMap,
+    validate,
+    setStandardSchemasMap,
+    setIsMountedMap,
+    abortValidation,
+    getField,
+    registerWatchers,
+    unregisterWatchers,
+    executeWatchers,
+  } = useStore(
     formStore,
-    useShallow((state: Store<T>) =>
-      options.dependencies?.map((dependency) => state.fieldsMap[dependency]),
-    ),
+    useShallow((state) => ({
+      setValue: state.setValue,
+      submit: state.submit,
+      setValidatorsMap: state.setValidatorsMap,
+      validate: state.validate,
+      setStandardSchemasMap: state.setStandardSchemasMap,
+      setIsMountedMap: state.setIsMountedMap,
+      abortValidation: state.abortValidation,
+      getField: state.getField,
+      registerWatchers: state.registerWatchers,
+      unregisterWatchers: state.unregisterWatchers,
+      executeWatchers: state.executeWatchers,
+    })),
   );
-
-  // Subscribe to actions
-  const setValue = useStore(formStore, (state) => state.setValue);
-  const submit = useStore(formStore, (state) => state.submit);
-  const setValidatorsMap = useStore(
-    formStore,
-    (state) => state.setValidatorsMap,
-  );
-  const validate = useStore(formStore, (state) => state.validate);
-  const setStandardSchemasMap = useStore(
-    formStore,
-    (state) => state.setStandardSchemasMap,
-  );
-  const setIsMountedMap = useStore(formStore, (state) => state.setIsMountedMap);
-  const abortValidation = useStore(formStore, (state) => state.abortValidation);
-  const getField = useStore(formStore, (state) => state.getField);
 
   useIsomorphicEffect(() => {
     setValidatorsMap(options.name, {
@@ -1192,12 +1387,20 @@ function useField<T extends DefaultValues, K extends keyof T>(
       debounceMs: options.debounceMs,
     });
     setStandardSchemasMap(options.name, options.standardSchema);
+
+    // Register watchers if provided
+    if (options.watchFields) {
+      registerWatchers(options.name, options.watchFields);
+    }
   }, [
+    formStore,
+    options.asyncValidator,
     options.debounceMs,
     options.name,
     options.standardSchema,
     options.validator,
-    options.asyncValidator,
+    options.watchFields,
+    registerWatchers,
     setStandardSchemasMap,
     setValidatorsMap,
   ]);
@@ -1205,13 +1408,26 @@ function useField<T extends DefaultValues, K extends keyof T>(
   useIsomorphicEffect(() => {
     setIsMountedMap(options.name, true);
     validate(options.name, "mount");
+
+    // Execute watchers for mount action
+    executeWatchers(options.name, "mount");
+
     const fieldName = options.name;
 
     return () => {
       setIsMountedMap(fieldName, false);
       abortValidation(fieldName);
+      unregisterWatchers(fieldName);
     };
-  }, [abortValidation, options.name, setIsMountedMap, validate]);
+  }, [
+    abortValidation,
+    executeWatchers,
+    formStore,
+    options.name,
+    setIsMountedMap,
+    unregisterWatchers,
+    validate,
+  ]);
 
   // Create field handlers
   const handleChange = useCallback(
@@ -1227,7 +1443,10 @@ function useField<T extends DefaultValues, K extends keyof T>(
 
   const handleBlur = useCallback(() => {
     validate(options.name, "blur");
-  }, [options.name, validate]);
+
+    // Execute watchers for blur action
+    formStore.getState().executeWatchers(options.name, "blur");
+  }, [formStore, options.name, validate]);
 
   // Create form API
   const formApi = useMemo(

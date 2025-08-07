@@ -1,75 +1,11 @@
-import { useState } from "react";
-import {
-  QueryClient,
-  useQuery,
-  QueryClientProvider,
-} from "@tanstack/react-query";
-import { useForm } from "@/hooks/my-form";
-import { Name } from "@/components/name";
-import { Email } from "@/components/email";
-import { Phone } from "@/components/phone";
-import { NextButton } from "@/components/next-button";
-
-const queryClient = new QueryClient();
-
-export function ReactQueryProvider({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
-}
-
-async function getPhone() {
-  return new Promise<string>((resolve) =>
-    setTimeout(() => {
-      resolve("0987654321");
-    }, 1000),
-  );
-}
+import "./index.css";
+import { WatcherDemo } from "@/components/watcher-demo";
 
 function App() {
-  const [count, setCount] = useState(0);
-  const { data: phone } = useQuery({
-    queryKey: ["phone"],
-    queryFn: getPhone,
-  });
-  const { Form } = useForm({
-    defaultValues: {
-      name: {
-        firstName: "John",
-        lastName: "Doe",
-      },
-      email: "john.doe@example.com",
-      phone,
-    },
-  });
-
   return (
-    <Form
-      className="flex h-screen flex-col items-center justify-center gap-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-    >
-      <h3 className="text-2xl font-bold">Split into multiple files</h3>
-      <Name />
-      <Email />
-      <Phone />
-      <NextButton />
-      <button
-        type="button"
-        onClick={() => {
-          setCount((c) => c + 1);
-        }}
-        className="cursor-pointer rounded-md border-2 border-gray-300 bg-blue-500 p-2 text-white hover:bg-blue-600"
-      >
-        Button was clicked {count} times (render optimization showcase)
-      </button>
-    </Form>
+    <div className="min-h-screen space-y-8 bg-gray-100">
+      <WatcherDemo />
+    </div>
   );
 }
 

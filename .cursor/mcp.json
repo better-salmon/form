@@ -4,6 +4,9 @@
       "command": "npx",
       "args": ["@eslint/mcp@latest"],
       "env": {}
+    },
+    "context7": {
+      "url": "https://mcp.context7.com/mcp"
     }
   }
 }

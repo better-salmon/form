@@ -14,7 +14,6 @@ const NameSchema = z.object({
 const nameFieldOptions = {
   name: "name",
   debounceMs: 1000,
-  dependencies: ["email"],
   standardSchema: NameSchema,
   validator: (props) => {
     console.log("validator", props);
