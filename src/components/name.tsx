@@ -1,75 +1,71 @@
-import { useField } from "@/hooks/my-form";
+import { useField, type FieldOptions } from "@/hooks/my-form";
 import { cn } from "@/utils/cn";
+
 import { z } from "zod";
 
-async function isNameValid(name: string, signal: AbortSignal) {
-  const response = await fetch(
-    `http://localhost:3001/${name.length % 2 === 0 ? "ok" : "error"}?delay=1000&value=${name}`,
-    {
-      signal,
-    },
-  );
-
-  return response.ok;
-}
-
 const NameSchema = z.object({
-  firstName: z.string().min(1, "First name is required"),
+  firstName: z
+    .string()
+    .min(1, "First name is required")
+    .max(10, "First name is too long"),
   lastName: z.string().min(1, "Last name is required"),
 });
 
-export function Name() {
-  const field = useField({
-    name: "name",
-    standardSchema: NameSchema,
-    validators: {
-      onSubmitAsyncDebounce: 1000,
-      onSubmit: (props) => {
-        const issues = props.validateUsingStandardSchema();
+const nameFieldOptions = {
+  name: "name",
+  debounceMs: 1000,
+  standardSchema: NameSchema,
+  validator: (props) => {
+    console.log("sync validator", props);
+    const issues = props.validateWithStandardSchema();
 
-        if (issues) {
+    switch (props.action) {
+      case "change": {
+        if (issues?.length && issues[0].message) {
           return {
-            type: "error",
+            type: "warning",
             message: issues[0].message,
           };
         }
-      },
-      onSubmitAsync: async (props) => {
-        const isValid = await isNameValid(props.value.firstName, props.signal);
-
-        if (!isValid) {
-          return {
-            type: "error",
-            message: "Failed to fetch",
-          };
-        }
-
         return {
-          type: "done",
+          type: "pending",
         };
-      },
-      onChange: () => {
+      }
+      case "submit": {
         return {
-          type: "idle",
+          type: "async-validator",
+          strategy: "auto",
+          debounceMs: 1000,
         };
-      },
-      onChangeAsync: async (props) => {
-        const isValid = await isNameValid(props.value.firstName, props.signal);
-
-        if (!isValid) {
-          return {
-            type: "error",
-            message: "Failed to fetch",
-          };
-        }
-
+      }
+      case "mount": {
         return {
-          type: "done",
+          type: "async-validator",
+          strategy: "force",
+          debounceMs: 0,
         };
+      }
+    }
+  },
+  asyncValidator: async (props) => {
+    console.log("async validator", props);
+
+    await fetch(
+      `http://localhost:3001/ok?delay=1000&value=${props.value.firstName}`,
+      {
+        signal: props.getAbortSignal(),
       },
-      onChangeAsyncDebounce: 1000,
-    },
-  });
+    );
+
+    return {
+      type: "warning",
+      message: "Name is too long",
+    };
+  },
+} satisfies FieldOptions;
+
+export function Name() {
+  const field = useField(nameFieldOptions);
 
   return (
     <label className="flex flex-col gap-2">
@@ -80,7 +76,6 @@ export function Name() {
           name={field.name}
           value={field.value.firstName}
           onBlur={field.handleBlur}
-          data-done={field.validationState.type === "done" ? "true" : "false"}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -95,20 +90,22 @@ export function Name() {
             });
           }}
           className={cn(
-            "rounded-md border-2 border-gray-300 p-2 pr-10 outline-none",
+            "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none",
             {
-              "border-red-500": field.validationState.type === "error",
-              "border-green-500": field.validationState.type === "done",
-              "border-blue-500": field.validationState.type === "validating",
-              "border-yellow-500": field.validationState.type === "debouncing",
+              "border-red-500": field.validationState.type === "invalid",
+              "border-green-500": field.validationState.type === "valid",
+              "border-blue-500": field.validationState.type === "checking",
+              "border-violet-500": field.validationState.type === "waiting",
+              "border-orange-500": field.validationState.type === "warning",
             },
           )}
         />
         <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-          {field.validationState.type === "validating" && <span>🤔</span>}
-          {field.validationState.type === "done" && <span>✅</span>}
-          {field.validationState.type === "error" && <span>❌</span>}
-          {field.validationState.type === "debouncing" && <span>⏰</span>}
+          {field.validationState.type === "checking" && <span>🤔</span>}
+          {field.validationState.type === "valid" && <span>✅</span>}
+          {field.validationState.type === "invalid" && <span>❌</span>}
+          {field.validationState.type === "waiting" && <span>⏰</span>}
+          {field.validationState.type === "warning" && <span>⚠️</span>}
         </div>
       </div>
     </label>

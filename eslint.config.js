@@ -6,6 +6,8 @@ import eslintReact from "@eslint-react/eslint-plugin";
 import reactRefresh from "eslint-plugin-react-refresh";
 import reactCompiler from "eslint-plugin-react-compiler";
 import eslintPluginUnicorn from "eslint-plugin-unicorn";
+import eslintPluginSonarJs from "eslint-plugin-sonarjs";
+import eslintPluginDeMorgan from "eslint-plugin-de-morgan";
 import jsxA11y from "eslint-plugin-jsx-a11y";
 import tseslint from "typescript-eslint";
 import { globalIgnores } from "eslint/config";
@@ -24,6 +26,8 @@ export default tseslint.config([
       eslintPluginUnicorn.configs.recommended,
       eslintReact.configs["recommended-typescript"],
       jsxA11y.flatConfigs.strict,
+      eslintPluginSonarJs.configs.recommended,
+      eslintPluginDeMorgan.configs.recommended,
     ],
     languageOptions: {
       ecmaVersion: 2020,
@@ -56,6 +60,10 @@ export default tseslint.config([
         { allowNumber: true },
       ],
       "@typescript-eslint/no-invalid-void-type": "off",
+      "@typescript-eslint/consistent-type-definitions": ["error", "type"],
+      "sonarjs/function-return-type": "off",
+      // TODO: remove this override when finalizing the work on the lib
+      "sonarjs/no-nested-functions": ["error", { threshold: 5 }],
     },
   },
 ]);
