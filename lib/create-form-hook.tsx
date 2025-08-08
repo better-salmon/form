@@ -619,6 +619,37 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
       /** Store-local registry to store watchers for this form instance */
       const watchersMap = new Map<string, StoredWatcher<T, D>[]>();
 
+      // Guard to prevent watcher feedback loops within a single dispatch chain
+      type WatcherTransactionState = {
+        active: boolean;
+        visitedEdges: Set<string>;
+        steps: number;
+        maxSteps: number;
+      };
+
+      const watcherTransaction: WatcherTransactionState = {
+        active: false,
+        visitedEdges: new Set<string>(),
+        steps: 0,
+        maxSteps: 1000,
+      };
+
+      function runInWatcherTransaction<T>(fn: () => T): T {
+        if (!watcherTransaction.active) {
+          watcherTransaction.active = true;
+          watcherTransaction.visitedEdges.clear();
+          watcherTransaction.steps = 0;
+          try {
+            return fn();
+          } finally {
+            watcherTransaction.active = false;
+            watcherTransaction.visitedEdges.clear();
+            watcherTransaction.steps = 0;
+          }
+        }
+        return fn();
+      }
+
       // ========================================================================
       // TYPED HELPER FUNCTIONS FOR CLEAN MUTATIONS
       // ========================================================================
@@ -1426,14 +1457,35 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
           }
         },
 
-        /** Executes watchers for a watched field and action */
+        /** Executes watchers for a watched field and action with loop protection */
         executeWatchers: (watchedField: keyof T, action: Action) => {
-          const watchKey = `${String(watchedField)}:${action}`;
-          const watchers = watchersMap.get(watchKey) ?? [];
+          runInWatcherTransaction(() => {
+            const watchKey = `${String(watchedField)}:${action}`;
+            const watchers = watchersMap.get(watchKey) ?? [];
 
-          for (const watcher of watchers) {
-            watcher.execute(action, get, validateInternal);
-          }
+            for (const watcher of watchers) {
+              // Edge key prevents running the same watched->target pair repeatedly
+              const edgeKey = `${String(watchedField)}->${String(
+                watcher.targetField,
+              )}:${action}`;
+
+              if (watcherTransaction.visitedEdges.has(edgeKey)) {
+                continue;
+              }
+
+              if (watcherTransaction.steps >= watcherTransaction.maxSteps) {
+                // Hard stop to avoid unbounded loops
+                console.warn(
+                  `Watcher chain exceeded ${watcherTransaction.maxSteps} steps; breaking to avoid a feedback loop`,
+                );
+                break;
+              }
+
+              watcherTransaction.visitedEdges.add(edgeKey);
+              watcherTransaction.steps += 1;
+              watcher.execute(action, get, validateInternal);
+            }
+          });
         },
       };
     }),
@@ -1581,6 +1633,8 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     // Register watchers if provided
     if (options.watchFields) {
       registerWatchers(options.name, options.watchFields);
+    } else {
+      unregisterWatchers(options.name);
     }
   }, [
     formStore,
@@ -1593,6 +1647,7 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     registerWatchers,
     setStandardSchemasMap,
     setValidatorsMap,
+    unregisterWatchers,
   ]);
 
   useIsomorphicEffect(() => {

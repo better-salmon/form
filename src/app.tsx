@@ -1,6 +1,8 @@
 import "@/index.css";
 import { useEffect, useState } from "react";
 import { WatcherDemo } from "@/demos/watcher-demo";
+import { WatcherLoopBugDemo } from "@/demos/watcher-loop-bug-demo";
+import { WatcherCascadesDemo } from "@/demos/watcher-cascades-demo";
 import { PasswordDemo } from "@/demos/password-demo";
 import { ContactDemo } from "@/demos/contact-demo";
 import { cn } from "@/utils/cn";
@@ -17,6 +19,18 @@ const DEMOS = [
     name: "Watcher Demo",
     component: WatcherDemo,
     description: "Field dependencies and watchers",
+  },
+  {
+    id: "watcher-loop-bug",
+    name: "Watcher Loop Bug",
+    component: WatcherLoopBugDemo,
+    description: "Intentional feedback loop with guards and logging",
+  },
+  {
+    id: "watcher-cascades",
+    name: "Watcher Cascades",
+    component: WatcherCascadesDemo,
+    description: "Legit cascades: chain and diamond propagation",
   },
   {
     id: "password",
