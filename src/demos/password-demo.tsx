@@ -66,19 +66,18 @@ function FieldInfo() {
 function PasswordField() {
   const field = useField({
     name: "password",
-    validator: ({ value }) => {
-      if (!value) {
-        return { type: "invalid", message: "Password is required" };
+    validator: (props) => {
+      if (!props.value) {
+        return props.createValidation.invalid("Password is required");
       }
 
-      if (value.length < 6) {
-        return {
-          type: "invalid",
-          message: "Password must be at least 6 characters",
-        };
+      if (props.value.length < 6) {
+        return props.createValidation.invalid(
+          "Password must be at least 6 characters",
+        );
       }
 
-      return { type: "valid", message: "Strong password!" };
+      return props.createValidation.valid("Strong password!");
     },
   });
 
@@ -128,17 +127,17 @@ function PasswordField() {
 function ConfirmPasswordField() {
   const field = useField({
     name: "confirmPassword",
-    validator: ({ value, formApi }) => {
-      const passwordField = formApi.getField("password");
+    validator: (props) => {
+      const passwordField = props.formApi.getField("password");
       console.log("passwordField", passwordField);
 
-      if (!value) {
-        return { type: "invalid", message: "Please confirm your password" };
+      if (!props.value) {
+        return props.createValidation.invalid("Please confirm your password");
       }
-      if (value !== passwordField.value) {
-        return { type: "invalid", message: "Passwords do not match" };
+      if (props.value !== passwordField.value) {
+        return props.createValidation.invalid("Passwords do not match");
       }
-      return { type: "valid", message: "Passwords match!" };
+      return props.createValidation.valid("Passwords match!");
     },
   });
 

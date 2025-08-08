@@ -35,11 +35,11 @@ export function WatcherDemo() {
         {/* User Type Field */}
         <Field
           name="userType"
-          validator={({ value }) => {
-            if (!value) {
-              return { type: "invalid", message: "Please select user type" };
+          validator={(props) => {
+            if (!props.value) {
+              return props.createValidation.invalid("Please select user type");
             }
-            return { type: "valid" };
+            return props.createValidation.valid();
           }}
         >
           {(field) => (
@@ -87,25 +87,24 @@ export function WatcherDemo() {
         {/* Email Field - Watches userType */}
         <Field
           name="email"
-          validator={({ value, formApi }) => {
-            const userType = formApi.getField("userType").value;
+          validator={(props) => {
+            const userType = props.formApi.getField("userType").value;
 
             if (userType === "guest") {
-              return { type: "valid", message: "Email optional for guests" };
+              return props.createValidation.valid("Email optional for guests");
             }
 
-            if (!value) {
-              return { type: "invalid", message: "Email is required" };
+            if (!props.value) {
+              return props.createValidation.invalid("Email is required");
             }
 
-            if (userType === "admin" && !value.includes("@admin.com")) {
-              return {
-                type: "invalid",
-                message: "Admin email must be from @admin.com domain",
-              };
+            if (userType === "admin" && !props.value.includes("@admin.com")) {
+              return props.createValidation.invalid(
+                "Admin email must be from @admin.com domain",
+              );
             }
 
-            return { type: "valid" };
+            return props.createValidation.valid();
           }}
           watchFields={{
             userType: ({ action, watchedValue, currentField, formApi }) => {
@@ -202,17 +201,16 @@ export function WatcherDemo() {
         {/* Password Field */}
         <Field
           name="password"
-          validator={({ value }) => {
-            if (!value) {
-              return { type: "invalid", message: "Password is required" };
+          validator={(props) => {
+            if (!props.value) {
+              return props.createValidation.invalid("Password is required");
             }
-            if (value.length < 6) {
-              return {
-                type: "invalid",
-                message: "Password must be at least 6 characters",
-              };
+            if (props.value.length < 6) {
+              return props.createValidation.invalid(
+                "Password must be at least 6 characters",
+              );
             }
-            return { type: "valid" };
+            return props.createValidation.valid();
           }}
         >
           {(field) => (
@@ -269,19 +267,18 @@ export function WatcherDemo() {
         {/* Confirm Password Field - Watches password */}
         <Field
           name="confirmPassword"
-          validator={({ value, formApi }) => {
-            const password = formApi.getField("password").value;
+          validator={(props) => {
+            const password = props.formApi.getField("password").value;
 
-            if (!value) {
-              return {
-                type: "invalid",
-                message: "Please confirm your password",
-              };
+            if (!props.value) {
+              return props.createValidation.invalid(
+                "Please confirm your password",
+              );
             }
-            if (value !== password) {
-              return { type: "invalid", message: "Passwords do not match" };
+            if (props.value !== password) {
+              return props.createValidation.invalid("Passwords do not match");
             }
-            return { type: "valid", message: "Passwords match!" };
+            return props.createValidation.valid("Passwords match!");
           }}
           watchFields={{
             password: ({ action, currentField, formApi }) => {
