@@ -7,8 +7,14 @@ type PasswordForm = {
   confirmPassword: Branded<string, "password">;
 };
 
-const { useForm, useField, useFieldDependencies } =
-  createFormHook<PasswordForm>();
+type PasswordFormDetails = {
+  someDetail: string;
+};
+
+const { useForm, useField, useFieldDependencies } = createFormHook<
+  PasswordForm,
+  PasswordFormDetails
+>();
 
 export function PasswordDemo() {
   const { Form } = useForm({
@@ -66,18 +72,26 @@ function FieldInfo() {
 function PasswordField() {
   const field = useField({
     name: "password",
+    watchFields: {
+      confirmPassword: (props) => {
+        console.log("confirmPassword watcher triggered", props);
+      },
+    },
     validator: (props) => {
       if (!props.value) {
-        return props.createValidation.invalid("Password is required");
+        return props.createValidation.invalid({
+          issues: [{ message: "Password is required" }],
+          details: { someDetail: "" },
+        });
       }
 
       if (props.value.length < 6) {
-        return props.createValidation.invalid(
-          "Password must be at least 6 characters",
-        );
+        return props.createValidation.invalid({
+          issues: [{ message: "Password must be at least 6 characters" }],
+        });
       }
 
-      return props.createValidation.valid("Strong password!");
+      return props.createValidation.valid();
     },
   });
 
@@ -132,12 +146,16 @@ function ConfirmPasswordField() {
       console.log("passwordField", passwordField);
 
       if (!props.value) {
-        return props.createValidation.invalid("Please confirm your password");
+        return props.createValidation.invalid({
+          issues: [{ message: "Please confirm your password" }],
+        });
       }
       if (props.value !== passwordField.value) {
-        return props.createValidation.invalid("Passwords do not match");
+        return props.createValidation.invalid({
+          issues: [{ message: "Passwords do not match" }],
+        });
       }
-      return props.createValidation.valid("Passwords match!");
+      return props.createValidation.valid();
     },
   });
 

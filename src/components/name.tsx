@@ -21,8 +21,8 @@ const nameFieldOptions = {
 
     switch (props.action) {
       case "change": {
-        if (issues?.length && issues[0].message) {
-          return props.createValidation.warning(issues[0].message);
+        if (issues?.length) {
+          return props.createValidation.warning({ issues });
         }
         return props.createValidation.pending();
       }
@@ -44,7 +44,9 @@ const nameFieldOptions = {
       },
     );
 
-    return props.createValidation.warning("Name is too long");
+    return props.createValidation.warning({
+      issues: [{ message: "Name is too long" }],
+    });
   },
 } satisfies FieldOptions;
 

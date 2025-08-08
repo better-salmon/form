@@ -37,87 +37,125 @@ type DefaultValues = Record<string, unknown>;
 declare const FIELD_STATE_BRAND: unique symbol;
 declare const FLOW_CONTROL_BRAND: unique symbol;
 
-export type InvalidState = {
+export type InvalidState<D = unknown> = {
   readonly [FIELD_STATE_BRAND]: true;
   type: "invalid";
-  message: string;
+  issues: readonly StandardSchemaV1.Issue[];
+  details?: D;
 };
 
-export type WarningState = {
+export type WarningState<D = unknown> = {
   readonly [FIELD_STATE_BRAND]: true;
   type: "warning";
-  message: string;
+  issues: readonly StandardSchemaV1.Issue[];
+  details?: D;
 };
 
-export type ValidState = {
+export type ValidState<D = unknown> = {
   readonly [FIELD_STATE_BRAND]: true;
   type: "valid";
-  message?: string;
+  details?: D;
 };
 
-export type PendingState = {
+export type PendingState<D = unknown> = {
   readonly [FIELD_STATE_BRAND]: true;
   type: "pending";
+  details?: D;
 };
 
-export type WaitingState = {
+export type WaitingState<D = unknown> = {
   readonly [FIELD_STATE_BRAND]: true;
   type: "waiting";
+  details?: D;
 };
 
-export type CheckingState = {
+export type CheckingState<D = unknown> = {
   readonly [FIELD_STATE_BRAND]: true;
   type: "checking";
+  details?: D;
 };
 
-const createValidation = {
-  valid: (message?: string): ValidState => ({
-    [FIELD_STATE_BRAND]: true as const,
-    type: "valid",
-    message,
-  }),
-  invalid: (message: string): InvalidState => ({
-    [FIELD_STATE_BRAND]: true as const,
-    type: "invalid",
-    message,
-  }),
-  warning: (message: string): WarningState => ({
-    [FIELD_STATE_BRAND]: true as const,
-    type: "warning",
-    message,
-  }),
-  pending: (): PendingState => ({
-    [FIELD_STATE_BRAND]: true as const,
-    type: "pending",
-  }),
-  waiting: (): WaitingState => ({
-    [FIELD_STATE_BRAND]: true as const,
-    type: "waiting",
-  }),
-  checking: (): CheckingState => ({
-    [FIELD_STATE_BRAND]: true as const,
-    type: "checking",
-  }),
+export type CreateValidationFactory<D = unknown> = {
+  valid: (props?: { details?: D }) => ValidState<D>;
+  invalid: (props?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }) => InvalidState<D>;
+  warning: (props?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }) => WarningState<D>;
+  pending: (props?: { details?: D }) => PendingState<D>;
+  waiting: (props?: { details?: D }) => WaitingState<D>;
+  checking: (props?: { details?: D }) => CheckingState<D>;
   async: {
-    skip: (): SkipValidationFlowControl => ({
-      [FLOW_CONTROL_BRAND]: true as const,
-      type: "async-validator",
-      strategy: "skip",
-    }),
-    force: (debounceMs?: number): ForceValidationFlowControl => ({
-      [FLOW_CONTROL_BRAND]: true as const,
-      type: "async-validator",
-      strategy: "force",
-      debounceMs,
-    }),
-    auto: (debounceMs?: number): AutoValidationFlowControl => ({
-      [FLOW_CONTROL_BRAND]: true as const,
-      type: "async-validator",
-      strategy: "auto",
-      debounceMs,
-    }),
-  },
-} as const;
+    skip: () => SkipValidationFlowControl;
+    force: (debounceMs?: number) => ForceValidationFlowControl;
+    auto: (debounceMs?: number) => AutoValidationFlowControl;
+  };
+};
+
+function createCreateValidation<D = unknown>(): CreateValidationFactory<D> {
+  return {
+    valid: (props?: { details?: D }): ValidState<D> =>
+      ({
+        type: "valid",
+        details: props?.details,
+      }) as ValidState<D>,
+    invalid: (props?: {
+      issues?: readonly StandardSchemaV1.Issue[];
+      details?: D;
+    }): InvalidState<D> =>
+      ({
+        type: "invalid",
+        issues: props?.issues ?? [],
+        details: props?.details,
+      }) as InvalidState<D>,
+    warning: (props?: {
+      issues?: readonly StandardSchemaV1.Issue[];
+      details?: D;
+    }): WarningState<D> =>
+      ({
+        type: "warning",
+        issues: props?.issues ?? [],
+        details: props?.details,
+      }) as WarningState<D>,
+    pending: (props?: { details?: D }): PendingState<D> =>
+      ({
+        type: "pending",
+        details: props?.details,
+      }) as PendingState<D>,
+    waiting: (props?: { details?: D }): WaitingState<D> =>
+      ({
+        type: "waiting",
+        details: props?.details,
+      }) as WaitingState<D>,
+    checking: (props?: { details?: D }): CheckingState<D> =>
+      ({
+        type: "checking",
+        details: props?.details,
+      }) as CheckingState<D>,
+    async: {
+      skip: (): SkipValidationFlowControl =>
+        ({
+          type: "async-validator",
+          strategy: "skip",
+        }) as SkipValidationFlowControl,
+      force: (debounceMs?: number): ForceValidationFlowControl =>
+        ({
+          type: "async-validator",
+          strategy: "force",
+          debounceMs,
+        }) as ForceValidationFlowControl,
+      auto: (debounceMs?: number): AutoValidationFlowControl =>
+        ({
+          type: "async-validator",
+          strategy: "auto",
+          debounceMs,
+        }) as AutoValidationFlowControl,
+    },
+  } as const;
+}
 
 // ============================================================================
 // WATCHER TYPES
@@ -126,18 +164,19 @@ const createValidation = {
 type WatchFieldsConfig<
   T extends DefaultValues,
   CurrentField extends keyof T,
+  D = unknown,
 > = {
   [WatchedField in Exclude<keyof T, CurrentField>]?: (props: {
     action: Action;
     watchedValue: T[WatchedField];
-    watchedField: Prettify<Field<T[WatchedField]>>;
-    currentField: Prettify<Field<T[CurrentField]>>;
+    watchedField: Prettify<Field<T[WatchedField], D>>;
+    currentField: Prettify<Field<T[CurrentField], D>>;
     formApi: {
       validate: (field: keyof T) => void;
       setValue: <K extends keyof T>(field: K, value: T[K]) => void;
       getField: <K extends keyof T>(
         field: K,
-      ) => Prettify<Field<T[K]> & { isMounted: boolean }>;
+      ) => Prettify<Field<T[K], D> & { isMounted: boolean }>;
       reset: (field: keyof T) => void;
       touch: (field: keyof T) => void;
     };
@@ -145,12 +184,12 @@ type WatchFieldsConfig<
 };
 
 // Clean watcher storage that executes with proper state context
-type StoredWatcher<T extends DefaultValues> = {
+type StoredWatcher<T extends DefaultValues, D = unknown> = {
   targetField: keyof T;
   watchedField: keyof T;
   execute: (
     action: Action,
-    getState: () => Store<T> & Actions<T>,
+    getState: () => Store<T, D> & Actions<T, D>,
     validateInternal: (field: keyof T, action: Action) => void,
   ) => void;
 };
@@ -178,13 +217,13 @@ type Action = "change" | "blur" | "submit" | "mount";
 
 // (Replaced by branded variants defined above)
 
-type FieldState =
-  | InvalidState
-  | WarningState
-  | ValidState
-  | PendingState
-  | WaitingState
-  | CheckingState;
+type FieldState<D = unknown> =
+  | InvalidState<D>
+  | WarningState<D>
+  | ValidState<D>
+  | PendingState<D>
+  | WaitingState<D>
+  | CheckingState<D>;
 
 export type SkipValidationFlowControl = {
   readonly [FLOW_CONTROL_BRAND]: true;
@@ -211,33 +250,37 @@ type ValidationFlowControl =
   | ForceValidationFlowControl
   | AutoValidationFlowControl;
 
-export type Field<T = unknown> = {
+export type Field<T = unknown, D = unknown> = {
   value: T;
   meta: {
     isTouched: boolean;
     numberOfChanges: number;
     numberOfSubmissions: number;
   };
-  validationState: FieldState;
+  validationState: FieldState<D>;
 };
 
-type FieldValidatorProps<T extends DefaultValues, K extends keyof T> = {
+type FieldValidatorProps<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+> = {
   action: Action;
   value: T[K];
   meta: Field<T[K]>["meta"];
-  validationState: Field<T[K]>["validationState"];
+  validationState: Field<T[K], D>["validationState"];
   validateWithStandardSchema: () =>
     | readonly StandardSchemaV1.Issue[]
     | undefined;
-  createValidation: typeof createValidation;
+  createValidation: CreateValidationFactory<D>;
   formApi: {
     getField: <F extends Exclude<keyof T, K>>(
       field: F,
     ) => {
       value: T[F];
-      meta: Field<T[F]>["meta"];
+      meta: Field<T[F], D>["meta"];
       isMounted: boolean;
-      validationState: Field<T[F]>["validationState"];
+      validationState: Field<T[F], D>["validationState"];
       validateWithStandardSchema: () =>
         | readonly StandardSchemaV1.Issue[]
         | undefined;
@@ -245,24 +288,28 @@ type FieldValidatorProps<T extends DefaultValues, K extends keyof T> = {
   };
 };
 
-type FieldAsyncValidatorProps<T extends DefaultValues, K extends keyof T> = {
+type FieldAsyncValidatorProps<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+> = {
   action: Action;
   value: T[K];
   meta: Field<T[K]>["meta"];
-  validationState: Field<T[K]>["validationState"];
+  validationState: Field<T[K], D>["validationState"];
   getAbortSignal: () => AbortSignal;
   validateWithStandardSchemaAsync: () => Promise<
     readonly StandardSchemaV1.Issue[] | undefined
   >;
-  createValidation: typeof createValidation;
+  createValidation: CreateValidationFactory<D>;
   formApi: {
     getField: <F extends Exclude<keyof T, K>>(
       field: F,
     ) => {
       value: T[F];
-      meta: Field<T[F]>["meta"];
+      meta: Field<T[F], D>["meta"];
       isMounted: boolean;
-      validationState: Field<T[F]>["validationState"];
+      validationState: Field<T[F], D>["validationState"];
       validateWithStandardSchemaAsync: () => Promise<
         readonly StandardSchemaV1.Issue[] | undefined
       >;
@@ -270,45 +317,50 @@ type FieldAsyncValidatorProps<T extends DefaultValues, K extends keyof T> = {
   };
 };
 
-type SyncValidatorResult =
-  | Exclude<FieldState, WaitingState | CheckingState>
+type SyncValidatorResult<D = unknown> =
+  | Exclude<FieldState<D>, WaitingState<D> | CheckingState<D>>
   | ValidationFlowControl;
 
-type SyncValidatorResultWithoutFlowControl = Exclude<
-  FieldState,
-  WaitingState | CheckingState
+type SyncValidatorResultWithoutFlowControl<D = unknown> = Exclude<
+  FieldState<D>,
+  WaitingState<D> | CheckingState<D>
 >;
 
-type AsyncValidatorResult = ValidState | InvalidState | WarningState;
+type AsyncValidatorResult<D = unknown> =
+  | ValidState<D>
+  | InvalidState<D>
+  | WarningState<D>;
 
 type ValidatorWithFlowControl<
   TForm extends DefaultValues,
   K extends keyof TForm,
+  D = unknown,
 > = (
-  props: Prettify<FieldValidatorProps<TForm, K>>,
-) => SyncValidatorResult | void;
+  props: Prettify<FieldValidatorProps<TForm, K, D>>,
+) => SyncValidatorResult<D> | void;
 
 type ValidatorWithoutFlowControl<
   TForm extends DefaultValues,
   K extends keyof TForm,
+  D = unknown,
 > = (
-  props: Prettify<FieldValidatorProps<TForm, K>>,
-) => SyncValidatorResultWithoutFlowControl | void;
+  props: Prettify<FieldValidatorProps<TForm, K, D>>,
+) => SyncValidatorResultWithoutFlowControl<D> | void;
 
-type AsyncValidator<T extends DefaultValues, K extends keyof T> = (
-  props: Prettify<FieldAsyncValidatorProps<T, K>>,
-) => Promise<AsyncValidatorResult>;
+type AsyncValidator<T extends DefaultValues, K extends keyof T, D = unknown> = (
+  props: Prettify<FieldAsyncValidatorProps<T, K, D>>,
+) => Promise<AsyncValidatorResult<D>>;
 
-export type FieldsMap<T extends DefaultValues> = {
-  [K in keyof T]: Field<T[K]>;
+export type FieldsMap<T extends DefaultValues, D = unknown> = {
+  [K in keyof T]: Field<T[K], D>;
 };
 
-export type ValidatorsMap<T extends DefaultValues> = {
+export type ValidatorsMap<T extends DefaultValues, D = unknown> = {
   [K in keyof T]?: {
     validator?:
-      | ValidatorWithFlowControl<T, K>
-      | ValidatorWithoutFlowControl<T, K>;
-    asyncValidator?: AsyncValidator<T, K>;
+      | ValidatorWithFlowControl<T, K, D>
+      | ValidatorWithoutFlowControl<T, K, D>;
+    asyncValidator?: AsyncValidator<T, K, D>;
     debounceMs?: number;
   };
 };
@@ -340,40 +392,49 @@ export type IsMountedMap<T extends DefaultValues> = {
 export type FieldDependenciesMap<
   T extends DefaultValues,
   K extends readonly (keyof T)[],
+  D = unknown,
 > = {
-  [P in K[number]]: Prettify<Field<T[P]> & { isMounted: boolean }>;
+  [P in K[number]]: Prettify<Field<T[P], D> & { isMounted: boolean }>;
 };
 
 // ============================================================================
 // API TYPES
 // ============================================================================
 
-export type FormApi<T extends DefaultValues, K extends keyof T = keyof T> = {
+export type FormApi<
+  T extends DefaultValues,
+  D = unknown,
+  K extends keyof T = keyof T,
+> = {
   submit: (fields?: readonly (keyof T)[]) => void;
   getField: <F extends Exclude<keyof T, K>>(
     field: F,
-  ) => Prettify<Field<T[F]> & { isMounted: boolean }>;
+  ) => Prettify<Field<T[F], D> & { isMounted: boolean }>;
 };
 
-export type FieldApi<T extends DefaultValues, K extends keyof T> = {
+export type FieldApi<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+> = {
   name: K;
   value: T[K];
   handleChange: (value: T[K]) => void;
   handleSubmit: () => void;
   handleBlur: () => void;
-  meta: Field<T[K]>["meta"];
-  formApi: Prettify<FormApi<T, K>>;
-  validationState: Field<T[K]>["validationState"];
+  meta: Field<T[K], D>["meta"];
+  formApi: Prettify<FormApi<T, D, K>>;
+  validationState: Field<T[K], D>["validationState"];
 };
 
 // ============================================================================
 // STORE TYPES
 // ============================================================================
 
-export type Store<T extends DefaultValues> = {
-  fieldsMap: FieldsMap<T>;
+export type Store<T extends DefaultValues, D = unknown> = {
+  fieldsMap: FieldsMap<T, D>;
   defaultValues: T;
-  validatorsMap: ValidatorsMap<T>;
+  validatorsMap: ValidatorsMap<T, D>;
   runningValidations: RunningValidationsMap<T>;
   debounceDelayMs: number;
   lastValidatedFields: LastValidatedFieldsMap<T>;
@@ -383,18 +444,22 @@ export type Store<T extends DefaultValues> = {
   isMountedMap: IsMountedMap<T>;
 };
 
-export type Actions<T extends DefaultValues> = {
+export type Actions<T extends DefaultValues, D = unknown> = {
   setIsMountedMap: (field: keyof T, isMounted: boolean) => void;
   setValue: <K extends keyof T>(field: K, value: T[K]) => void;
+  /** Marks a field as touched without changing value or numberOfChanges */
+  touch: (field: keyof T) => void;
   submit: (fields?: readonly (keyof T)[]) => void;
   setDefaultValues: (defaultValues: T) => void;
+  /** Sets the global default debounce delay (ms) used for auto/force async validation */
+  setDebounceDelayMs: (debounceMs: number) => void;
   setValidatorsMap: <K extends keyof T>(
     field: K,
-    validators: {
+    validators?: {
       validator?:
-        | ValidatorWithFlowControl<T, K>
-        | ValidatorWithoutFlowControl<T, K>;
-      asyncValidator?: AsyncValidator<T, K>;
+        | ValidatorWithFlowControl<T, K, D>
+        | ValidatorWithoutFlowControl<T, K, D>;
+      asyncValidator?: AsyncValidator<T, K, D>;
       debounceMs?: number;
     },
   ) => void;
@@ -406,10 +471,10 @@ export type Actions<T extends DefaultValues> = {
   ) => void;
   getField: <F extends keyof T>(
     field: F,
-  ) => Prettify<Field<T[F]> & { isMounted: boolean }>;
+  ) => Prettify<Field<T[F], D> & { isMounted: boolean }>;
   registerWatchers: <K extends keyof T>(
     targetField: K,
-    watchFields: WatchFieldsConfig<T, K>,
+    watchFields: WatchFieldsConfig<T, K, D>,
   ) => void;
   unregisterWatchers: (targetField: keyof T) => void;
   executeWatchers: (watchedField: keyof T, action: Action) => void;
@@ -421,11 +486,13 @@ export type Actions<T extends DefaultValues> = {
 
 export type UseFormOptions<T extends DefaultValues> = {
   defaultValues: T;
+  /** Global default debounce delay (ms) for async validations when not overridden per-field */
+  debounceDelayMs?: number;
 };
 
-export type UseFormResult<T extends DefaultValues> = {
-  Field: <K extends keyof T>(props: FieldProps<T, K>) => React.ReactNode;
-  formStore: ReturnType<typeof createFormStoreMutative<T>>;
+export type UseFormResult<T extends DefaultValues, D = unknown> = {
+  Field: <K extends keyof T>(props: FieldProps<T, K, D>) => React.ReactNode;
+  formStore: ReturnType<typeof createFormStoreMutative<T, D>>;
   Form: (props: React.ComponentProps<"form">) => React.ReactElement;
 };
 
@@ -433,51 +500,56 @@ export type UseFormResult<T extends DefaultValues> = {
 export type UseFieldOptionsWithAsync<
   T extends DefaultValues,
   K extends keyof T,
+  D = unknown,
 > = {
   name: K;
-  validator?: ValidatorWithFlowControl<T, K>;
-  asyncValidator: AsyncValidator<T, K>;
+  validator?: ValidatorWithFlowControl<T, K, D>;
+  asyncValidator: AsyncValidator<T, K, D>;
   debounceMs?: number;
   standardSchema?: StandardSchemaV1<T[K]>;
-  watchFields?: WatchFieldsConfig<T, K>;
+  watchFields?: WatchFieldsConfig<T, K, D>;
 };
 
 // When asyncValidator is not provided, validator cannot return validation flow controls
 export type UseFieldOptionsWithoutAsync<
   T extends DefaultValues,
   K extends keyof T,
+  D = unknown,
 > = {
   name: K;
-  validator?: ValidatorWithoutFlowControl<T, K>;
+  validator?: ValidatorWithoutFlowControl<T, K, D>;
   asyncValidator?: never;
   debounceMs?: never;
   standardSchema?: StandardSchemaV1<T[K]>;
-  watchFields?: WatchFieldsConfig<T, K>;
+  watchFields?: WatchFieldsConfig<T, K, D>;
 };
 
-export type UseFieldOptions<T extends DefaultValues, K extends keyof T> =
-  | UseFieldOptionsWithAsync<T, K>
-  | UseFieldOptionsWithoutAsync<T, K>;
+export type UseFieldOptions<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+> = UseFieldOptionsWithAsync<T, K, D> | UseFieldOptionsWithoutAsync<T, K, D>;
 
-export type FieldOptionsInput<T extends DefaultValues> = {
-  [K in keyof T]: UseFieldOptions<T, K> & { name: K };
+export type FieldOptionsInput<T extends DefaultValues, D = unknown> = {
+  [K in keyof T]: UseFieldOptions<T, K, D> & { name: K };
 }[keyof T];
 
 export type FieldProps<
   T extends DefaultValues,
   K extends keyof T,
-> = UseFieldOptions<T, K> & {
-  children: (props: Prettify<FieldApi<T, K>>) => React.ReactNode;
+  D = unknown,
+> = UseFieldOptions<T, K, D> & {
+  children: (props: Prettify<FieldApi<T, K, D>>) => React.ReactNode;
 };
 
-export type CreateFormHookResult<T extends DefaultValues> = {
-  useForm: (options: UseFormOptions<T>) => UseFormResult<T>;
+export type CreateFormHookResult<T extends DefaultValues, D = unknown> = {
+  useForm: (options: UseFormOptions<T>) => UseFormResult<T, D>;
   useField: <K extends keyof T>(
-    options: UseFieldOptions<T, K>,
-  ) => Prettify<FieldApi<T, K>>;
+    options: UseFieldOptions<T, K, D>,
+  ) => Prettify<FieldApi<T, K, D>>;
   useFieldDependencies: <K extends (keyof T)[]>(
     dependencies?: K,
-  ) => FieldDependenciesMap<T, K>;
+  ) => FieldDependenciesMap<T, K, D>;
 };
 
 // ============================================================================
@@ -487,9 +559,9 @@ export type CreateFormHookResult<T extends DefaultValues> = {
 /**
  * Creates initial fields map from default values
  */
-function createInitialFieldsMap<T extends DefaultValues>(
+function createInitialFieldsMap<T extends DefaultValues, D = unknown>(
   defaultValues: T,
-): FieldsMap<T> {
+): FieldsMap<T, D> {
   const entries = Object.entries(defaultValues) as FieldEntries<T>;
 
   return Object.fromEntries(
@@ -502,17 +574,30 @@ function createInitialFieldsMap<T extends DefaultValues>(
           numberOfChanges: 0,
           numberOfSubmissions: 0,
         },
-        validationState: createValidation.pending(),
-      } satisfies Field<T[typeof field]>,
+        validationState: {
+          type: "pending",
+        } as PendingState<D>,
+      } satisfies Field<T[typeof field], D>,
     ]),
-  ) as FieldsMap<T>;
+  ) as FieldsMap<T, D>;
 }
 
 /**
  * Extracts field names from fields map
  */
-function getFieldNames<T extends DefaultValues>(fieldsMap: FieldsMap<T>) {
+function getFieldNames<T extends DefaultValues, D = unknown>(
+  fieldsMap: FieldsMap<T, D>,
+) {
   return Object.keys(fieldsMap) as (keyof T)[];
+}
+
+/**
+ * Normalizes a debounce value to a non-negative finite number. Non-finite/invalid -> 0
+ */
+function normalizeDebounceMs(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, value)
+    : 0;
 }
 
 // ============================================================================
@@ -522,35 +607,36 @@ function getFieldNames<T extends DefaultValues>(fieldsMap: FieldsMap<T>) {
 /**
  * Creates the main form store with mutative capabilities
  */
-function createFormStoreMutative<T extends DefaultValues>(
+function createFormStoreMutative<T extends DefaultValues, D = unknown>(
   options: UseFormOptions<T>,
 ) {
-  const store = createStore<Store<T> & Actions<T>>()(
+  const store = createStore<Store<T, D> & Actions<T, D>>()(
     mutative((set, get) => {
+      const createValidation = createCreateValidation<D>();
       // ========================================================================
       // STORE-LOCAL WATCHER REGISTRY
       // ========================================================================
 
       /** Store-local registry to store watchers for this form instance */
-      const watchersMap = new Map<string, StoredWatcher<T>[]>();
+      const watchersMap = new Map<string, StoredWatcher<T, D>[]>();
 
       // ========================================================================
       // TYPED HELPER FUNCTIONS FOR CLEAN MUTATIONS
       // ========================================================================
 
       /** Mutates fields map with type safety */
-      function mutateFields(mutator: (fields: FieldsMap<T>) => void) {
+      function mutateFields(mutator: (fields: FieldsMap<T, D>) => void) {
         set((state) => {
-          mutator(state.fieldsMap as FieldsMap<T>);
+          mutator(state.fieldsMap as FieldsMap<T, D>);
         });
       }
 
       /** Mutates validators map with type safety */
       function mutateValidators(
-        mutator: (validators: ValidatorsMap<T>) => void,
+        mutator: (validators: ValidatorsMap<T, D>) => void,
       ) {
         set((state) => {
-          mutator(state.validatorsMap as ValidatorsMap<T>);
+          mutator(state.validatorsMap as ValidatorsMap<T, D>);
         });
       }
 
@@ -573,7 +659,7 @@ function createFormStoreMutative<T extends DefaultValues>(
       }
 
       /** Sets field validation state */
-      function setFieldState(field: keyof T, state: FieldState) {
+      function setFieldState(field: keyof T, state: FieldState<D>) {
         const currentState = get().fieldsMap[field].validationState;
 
         // Only update if the validation state actually changed
@@ -638,40 +724,17 @@ function createFormStoreMutative<T extends DefaultValues>(
       /** Handles sync validation result that's not flow control */
       function handleSyncValidationResult(
         field: keyof T,
-        result: SyncValidatorResultWithoutFlowControl,
+        result: SyncValidatorResultWithoutFlowControl<D>,
       ) {
-        switch (result.type) {
-          case "valid": {
-            setFieldState(field, createValidation.valid(result.message));
-            cleanupValidation(field);
-            break;
-          }
-
-          case "invalid": {
-            setFieldState(field, createValidation.invalid(result.message));
-            cleanupValidation(field);
-            break;
-          }
-
-          case "warning": {
-            setFieldState(field, createValidation.warning(result.message));
-            cleanupValidation(field);
-            break;
-          }
-
-          case "pending": {
-            setFieldState(field, createValidation.pending());
-            cleanupValidation(field);
-            break;
-          }
-        }
+        setFieldState(field, result);
+        cleanupValidation(field);
       }
 
       /** Handles auto validation strategy */
       function handleAutoValidation(
         field: keyof T,
         currentField: Field<T[keyof T]>,
-        validators: ValidatorsMap<T>[keyof T],
+        validators: ValidatorsMap<T, D>[keyof T],
         flowControl: AutoValidationFlowControl,
         action: Action,
       ) {
@@ -694,12 +757,10 @@ function createFormStoreMutative<T extends DefaultValues>(
             state.lastValidatedNumberOfChanges[field];
 
           const shouldSkipValidation =
-            (lastValidatedValue !== undefined &&
-              deepEqual(lastValidatedValue, currentField.value) &&
-              lastValidatedChanges !== undefined &&
-              lastValidatedChanges === currentField.meta.numberOfChanges) ||
-            currentField.validationState.type === "valid" ||
-            currentField.validationState.type === "invalid";
+            lastValidatedValue !== undefined &&
+            deepEqual(lastValidatedValue, currentField.value) &&
+            lastValidatedChanges !== undefined &&
+            lastValidatedChanges === currentField.meta.numberOfChanges;
 
           if (shouldSkipValidation) {
             // Value and numberOfChanges haven't changed from last validation, skip
@@ -709,10 +770,11 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         // Start scheduled async validation if async validator exists
         if (validators?.asyncValidator) {
-          const debounceMs =
+          const debounceMs = normalizeDebounceMs(
             flowControl.debounceMs ??
-            validators.debounceMs ??
-            state.debounceDelayMs;
+              validators.debounceMs ??
+              state.debounceDelayMs,
+          );
 
           scheduleValidation(
             field,
@@ -728,7 +790,7 @@ function createFormStoreMutative<T extends DefaultValues>(
       function handleForceValidation(
         field: keyof T,
         currentField: Field<T[keyof T]>,
-        validators: ValidatorsMap<T>[keyof T],
+        validators: ValidatorsMap<T, D>[keyof T],
         flowControl: ForceValidationFlowControl,
         action: Action,
       ) {
@@ -736,10 +798,12 @@ function createFormStoreMutative<T extends DefaultValues>(
         cleanupValidation(field);
 
         if (validators?.asyncValidator) {
-          const debounceMs =
+          const debounceMs = normalizeDebounceMs(
             flowControl.debounceMs ??
-            validators.debounceMs ??
-            get().debounceDelayMs;
+              validators.debounceMs ??
+              get().debounceDelayMs,
+          );
+
           scheduleValidation(
             field,
             currentField.value,
@@ -754,7 +818,7 @@ function createFormStoreMutative<T extends DefaultValues>(
       function handleAsyncValidatorFlow(
         field: keyof T,
         currentField: Field<T[keyof T]>,
-        validators: ValidatorsMap<T>[keyof T],
+        validators: ValidatorsMap<T, D>[keyof T],
         flowControl: ValidationFlowControl,
         action: Action,
       ) {
@@ -811,7 +875,7 @@ function createFormStoreMutative<T extends DefaultValues>(
       function scheduleValidation<K extends keyof T>(
         field: K,
         value: T[K],
-        validator: AsyncValidator<T, K>,
+        validator: AsyncValidator<T, K, D>,
         debounceMs: number,
         action: Action,
       ) {
@@ -853,7 +917,7 @@ function createFormStoreMutative<T extends DefaultValues>(
       function runValidation<K extends keyof T>(
         field: K,
         value: T[K],
-        validator: AsyncValidator<T, K>,
+        validator: AsyncValidator<T, K, D>,
         action: Action,
       ) {
         // Abort any existing validation for this field
@@ -880,7 +944,7 @@ function createFormStoreMutative<T extends DefaultValues>(
         set((state) => {
           const validations =
             state.runningValidations as RunningValidationsMap<T>;
-          const fields = state.fieldsMap as FieldsMap<T>;
+          const fields = state.fieldsMap as FieldsMap<T, D>;
           const lastValidated =
             state.lastValidatedFields as LastValidatedFieldsMap<T>;
           const lastValidatedNumberOfChanges =
@@ -946,9 +1010,16 @@ function createFormStoreMutative<T extends DefaultValues>(
             // Handle validation error
             setFieldState(
               field,
-              createValidation.invalid(
-                error instanceof Error ? error.message : "Validation failed",
-              ),
+              createValidation.invalid({
+                issues: [
+                  {
+                    message:
+                      error instanceof Error
+                        ? error.message
+                        : "Validation failed",
+                  },
+                ],
+              }),
             );
 
             cleanupValidation(field);
@@ -994,6 +1065,10 @@ function createFormStoreMutative<T extends DefaultValues>(
       /** Main validation orchestrator - handles sync validation and triggers async validation */
       function validateInternal(field: keyof T, action: Action) {
         const state = get();
+        // Skip unmounted fields
+        if (!state.isMountedMap[field]) {
+          return;
+        }
 
         const currentField = state.fieldsMap[field];
         const validators = state.validatorsMap[field];
@@ -1062,10 +1137,10 @@ function createFormStoreMutative<T extends DefaultValues>(
         // INITIAL STATE
         // ======================================================================
         defaultValues: options.defaultValues,
-        fieldsMap: createInitialFieldsMap(options.defaultValues),
+        fieldsMap: createInitialFieldsMap<T, D>(options.defaultValues),
         validatorsMap: {},
         runningValidations: {},
-        debounceDelayMs: 500,
+        debounceDelayMs: options.debounceDelayMs ?? 500,
         lastValidatedFields: {},
         lastValidatedNumberOfChanges: {},
         validationIds: Object.fromEntries(
@@ -1126,6 +1201,16 @@ function createFormStoreMutative<T extends DefaultValues>(
           }
         },
 
+        /** Marks a field as touched without affecting value or numberOfChanges */
+        touch: (field) => {
+          set((state) => {
+            const fields = state.fieldsMap as FieldsMap<T, D>;
+            if (!fields[field].meta.isTouched) {
+              fields[field].meta.isTouched = true;
+            }
+          });
+        },
+
         /** Updates field value and triggers validation */
         setValue: (field, value) => {
           const state = get();
@@ -1150,6 +1235,17 @@ function createFormStoreMutative<T extends DefaultValues>(
           get().executeWatchers(field, "change");
         },
 
+        /** Sets global default debounce for async validation */
+        setDebounceDelayMs: (debounceMs) => {
+          const current = get().debounceDelayMs;
+          const next = normalizeDebounceMs(debounceMs);
+          if (current !== next) {
+            set((state) => {
+              state.debounceDelayMs = next;
+            });
+          }
+        },
+
         /** Submits specified fields (or all fields if none specified) */
         submit: (fields) => {
           const state = get();
@@ -1159,6 +1255,10 @@ function createFormStoreMutative<T extends DefaultValues>(
 
           // Update submission metadata and trigger validation for each field
           for (const field of fieldsToSubmit) {
+            // Skip unmounted fields
+            if (!state.isMountedMap[field]) {
+              continue;
+            }
             mutateFields((fields) => {
               fields[field].meta.numberOfSubmissions++;
             });
@@ -1176,6 +1276,11 @@ function createFormStoreMutative<T extends DefaultValues>(
 
         /** Main validation orchestrator - handles sync validation and triggers async validation */
         validate: (field, action) => {
+          const state = get();
+          // Skip unmounted fields
+          if (!state.isMountedMap[field]) {
+            return;
+          }
           validateInternal(field, action);
 
           // Execute watchers for this validation action
@@ -1226,7 +1331,7 @@ function createFormStoreMutative<T extends DefaultValues>(
         /** Registers watchers for a field */
         registerWatchers: <K extends keyof T>(
           targetField: K,
-          watchFields: WatchFieldsConfig<T, K>,
+          watchFields: WatchFieldsConfig<T, K, D>,
         ) => {
           // Remove existing watchers for this target field first
           for (const [key, registrations] of watchersMap.entries()) {
@@ -1241,26 +1346,14 @@ function createFormStoreMutative<T extends DefaultValues>(
           }
 
           // Register new watchers for all actions
-          for (const [watchedField, callback] of Object.entries(
-            watchFields,
-          ) as [
+          for (const watchedField of Object.keys(watchFields) as Exclude<
             keyof T,
-            (props: {
-              action: Action;
-              watchedValue: unknown;
-              watchedField: Prettify<Field>;
-              currentField: Prettify<Field<T[K]>>;
-              formApi: {
-                validate: (field: keyof T) => void;
-                setValue: <F extends keyof T>(field: F, value: T[F]) => void;
-                getField: <F extends keyof T>(
-                  field: F,
-                ) => Prettify<Field<T[F]> & { isMounted: boolean }>;
-                reset: (field: keyof T) => void;
-                touch: (field: keyof T) => void;
-              };
-            }) => void,
-          ][]) {
+            K
+          >[]) {
+            const callback = watchFields[watchedField];
+            if (!callback) {
+              continue;
+            }
             for (const action of ACTIONS) {
               const watchKey = `${watchedField as string}:${action}`;
               const existing = watchersMap.get(watchKey) ?? [];
@@ -1287,11 +1380,7 @@ function createFormStoreMutative<T extends DefaultValues>(
                       state.setValue(field, defaultValue);
                     },
                     touch: (field: keyof T) => {
-                      const fieldData = state.fieldsMap[field];
-                      if (!fieldData.meta.isTouched) {
-                        const currentValue = fieldData.value;
-                        state.setValue(field, currentValue);
-                      }
+                      state.touch(field);
                     },
                   };
 
@@ -1345,9 +1434,8 @@ function createFormStoreMutative<T extends DefaultValues>(
 // CONTEXT
 // ============================================================================
 
-const FormContext = createContext<StoreApi<
-  Store<DefaultValues> & Actions<DefaultValues>
-> | null>(null);
+type GenericStoreApi = StoreApi<Store<DefaultValues> & Actions<DefaultValues>>;
+const FormContext = createContext<GenericStoreApi | null>(null);
 
 // ============================================================================
 // COMPONENTS
@@ -1361,7 +1449,7 @@ function FormProvider({
   formStore,
 }: Readonly<{
   children: React.ReactNode;
-  formStore: StoreApi<Store<DefaultValues> & Actions<DefaultValues>>;
+  formStore: GenericStoreApi;
 }>) {
   return <FormContext value={formStore}>{children}</FormContext>;
 }
@@ -1369,10 +1457,10 @@ function FormProvider({
 /**
  * Field component that renders a field using the provided children prop
  */
-function Field<T extends DefaultValues, K extends keyof T>(
-  props: FieldProps<T, K>,
+function Field<T extends DefaultValues, K extends keyof T, D = unknown>(
+  props: FieldProps<T, K, D>,
 ): React.ReactNode {
-  const fieldApi = useField<T, K>(props);
+  const fieldApi = useField<T, K, D>(props);
 
   return props.children(fieldApi);
 }
@@ -1381,10 +1469,14 @@ function Field<T extends DefaultValues, K extends keyof T>(
 // HOOKS
 // ============================================================================
 
-function useFieldDependencies<T extends DefaultValues, K extends (keyof T)[]>(
-  dependencies?: K,
-): FieldDependenciesMap<T, K> {
-  const formStore = use(FormContext) as StoreApi<Store<T> & Actions<T>> | null;
+function useFieldDependencies<
+  T extends DefaultValues,
+  K extends (keyof T)[],
+  D = unknown,
+>(dependencies?: K): FieldDependenciesMap<T, K, D> {
+  const formStore = use(FormContext) as StoreApi<
+    Store<T, D> & Actions<T, D>
+  > | null;
 
   if (!formStore) {
     throw new Error("FormProvider is not found");
@@ -1397,7 +1489,7 @@ function useFieldDependencies<T extends DefaultValues, K extends (keyof T)[]>(
 
   const { fieldsMap, isMountedMap } = useStore(
     formStore,
-    useShallow((state: Store<T>) => ({
+    useShallow((state: Store<T, D>) => ({
       fieldsMap: state.fieldsMap,
       isMountedMap: state.isMountedMap,
     })),
@@ -1413,7 +1505,7 @@ function useFieldDependencies<T extends DefaultValues, K extends (keyof T)[]>(
             isMounted: isMountedMap[dependency],
           },
         ]),
-      ) as FieldDependenciesMap<T, K>,
+      ) as FieldDependenciesMap<T, K, D>,
     [deduplicatedDependencies, fieldsMap, isMountedMap],
   );
 }
@@ -1421,10 +1513,12 @@ function useFieldDependencies<T extends DefaultValues, K extends (keyof T)[]>(
 /**
  * Hook to access and manage a specific form field
  */
-function useField<T extends DefaultValues, K extends keyof T>(
-  options: UseFieldOptions<T, K>,
-): FieldApi<T, K> {
-  const formStore = use(FormContext) as StoreApi<Store<T> & Actions<T>> | null;
+function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
+  options: UseFieldOptions<T, K, D>,
+): FieldApi<T, K, D> {
+  const formStore = use(FormContext) as StoreApi<
+    Store<T, D> & Actions<T, D>
+  > | null;
 
   if (!formStore) {
     throw new Error("FormProvider is not found");
@@ -1432,7 +1526,7 @@ function useField<T extends DefaultValues, K extends keyof T>(
 
   const field = useStore(
     formStore,
-    useShallow((state: Store<T>) => state.fieldsMap[options.name]),
+    useShallow((state: Store<T, D>) => state.fieldsMap[options.name]),
   );
 
   const {
@@ -1449,7 +1543,7 @@ function useField<T extends DefaultValues, K extends keyof T>(
     executeWatchers,
   } = useStore(
     formStore,
-    useShallow((state) => ({
+    useShallow((state: Store<T, D> & Actions<T, D>) => ({
       setValue: state.setValue,
       submit: state.submit,
       setValidatorsMap: state.setValidatorsMap,
@@ -1493,14 +1587,14 @@ function useField<T extends DefaultValues, K extends keyof T>(
     setIsMountedMap(options.name, true);
     validate(options.name, "mount");
 
-    // Execute watchers for mount action
-    executeWatchers(options.name, "mount");
-
     const fieldName = options.name;
 
     return () => {
       setIsMountedMap(fieldName, false);
       abortValidation(fieldName);
+      // Clear validators and schema for unmounted field to avoid stale work
+      setValidatorsMap(fieldName, undefined);
+      setStandardSchemasMap(fieldName, undefined);
       unregisterWatchers(fieldName);
     };
   }, [
@@ -1508,6 +1602,8 @@ function useField<T extends DefaultValues, K extends keyof T>(
     executeWatchers,
     formStore,
     options.name,
+    setStandardSchemasMap,
+    setValidatorsMap,
     setIsMountedMap,
     unregisterWatchers,
     validate,
@@ -1527,10 +1623,7 @@ function useField<T extends DefaultValues, K extends keyof T>(
 
   const handleBlur = useCallback(() => {
     validate(options.name, "blur");
-
-    // Execute watchers for blur action
-    formStore.getState().executeWatchers(options.name, "blur");
-  }, [formStore, options.name, validate]);
+  }, [options.name, validate]);
 
   // Create form API
   const formApi = useMemo(
@@ -1556,10 +1649,10 @@ function useField<T extends DefaultValues, K extends keyof T>(
 /**
  * Main hook to create and manage a form
  */
-export function useForm<T extends DefaultValues>(
+export function useForm<T extends DefaultValues, D = unknown>(
   options: UseFormOptions<T>,
-): UseFormResult<T> {
-  const [formStore] = useState(() => createFormStoreMutative(options));
+): UseFormResult<T, D> {
+  const [formStore] = useState(() => createFormStoreMutative<T, D>(options));
 
   // Sync default values when they change
   useIsomorphicEffect(() => {
@@ -1588,7 +1681,8 @@ export function useForm<T extends DefaultValues>(
  */
 export function createFormHook<
   T extends DefaultValues,
->(): CreateFormHookResult<T> {
+  D = unknown,
+>(): CreateFormHookResult<T, D> {
   return {
     useForm,
     useField,

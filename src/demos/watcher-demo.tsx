@@ -37,7 +37,9 @@ export function WatcherDemo() {
           name="userType"
           validator={(props) => {
             if (!props.value) {
-              return props.createValidation.invalid("Please select user type");
+              return props.createValidation.invalid({
+                issues: [{ message: "Please select user type" }],
+              });
             }
             return props.createValidation.valid();
           }}
@@ -91,17 +93,21 @@ export function WatcherDemo() {
             const userType = props.formApi.getField("userType").value;
 
             if (userType === "guest") {
-              return props.createValidation.valid("Email optional for guests");
+              return props.createValidation.valid();
             }
 
             if (!props.value) {
-              return props.createValidation.invalid("Email is required");
+              return props.createValidation.invalid({
+                issues: [{ message: "Email is required" }],
+              });
             }
 
             if (userType === "admin" && !props.value.includes("@admin.com")) {
-              return props.createValidation.invalid(
-                "Admin email must be from @admin.com domain",
-              );
+              return props.createValidation.invalid({
+                issues: [
+                  { message: "Admin email must be from @admin.com domain" },
+                ],
+              });
             }
 
             return props.createValidation.valid();
@@ -203,12 +209,14 @@ export function WatcherDemo() {
           name="password"
           validator={(props) => {
             if (!props.value) {
-              return props.createValidation.invalid("Password is required");
+              return props.createValidation.invalid({
+                issues: [{ message: "Password is required" }],
+              });
             }
             if (props.value.length < 6) {
-              return props.createValidation.invalid(
-                "Password must be at least 6 characters",
-              );
+              return props.createValidation.invalid({
+                issues: [{ message: "Password must be at least 6 characters" }],
+              });
             }
             return props.createValidation.valid();
           }}
@@ -271,14 +279,16 @@ export function WatcherDemo() {
             const password = props.formApi.getField("password").value;
 
             if (!props.value) {
-              return props.createValidation.invalid(
-                "Please confirm your password",
-              );
+              return props.createValidation.invalid({
+                issues: [{ message: "Please confirm your password" }],
+              });
             }
             if (props.value !== password) {
-              return props.createValidation.invalid("Passwords do not match");
+              return props.createValidation.invalid({
+                issues: [{ message: "Passwords do not match" }],
+              });
             }
-            return props.createValidation.valid("Passwords match!");
+            return props.createValidation.valid();
           }}
           watchFields={{
             password: ({ action, currentField, formApi }) => {
