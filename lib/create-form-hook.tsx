@@ -153,7 +153,7 @@ type RunningValidationsMap<T extends DefaultValues> = {
 
 type Action = "change" | "blur" | "submit" | "mount";
 
-// (Replaced by branded variants defined above)
+// Union of branded validation states
 
 type FieldState<D = unknown> =
   | InvalidState<D>
@@ -718,6 +718,36 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
         });
       }
 
+      /**
+       * Determines whether auto validation can be skipped for a field based on
+       * current state. Returns true when:
+       * - A validation is already running for the same value, or
+       * - The value and numberOfChanges match the last completed validation
+       */
+      function shouldSkipAutoValidation(
+        field: keyof T,
+        currentField: Field<T[keyof T]>,
+      ): boolean {
+        const state = get();
+        const runningValidation = state.runningValidations[field];
+
+        // If validation is already running and the value hasn't changed, skip
+        if (runningValidation) {
+          return deepEqual(runningValidation.stateSnapshot, currentField.value);
+        }
+
+        // Otherwise, skip if nothing changed since the last completed validation
+        const lastValidatedValue = state.lastValidatedFields[field];
+        const lastValidatedChanges = state.lastValidatedNumberOfChanges[field];
+
+        return (
+          lastValidatedValue !== undefined &&
+          deepEqual(lastValidatedValue, currentField.value) &&
+          lastValidatedChanges !== undefined &&
+          lastValidatedChanges === currentField.meta.numberOfChanges
+        );
+      }
+
       /** Handles sync validation result that's not flow control */
       function handleSyncValidationResult(
         field: keyof T,
@@ -738,31 +768,14 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
         const state = get();
         const runningValidation = state.runningValidations[field];
 
+        // Unified skip condition for auto validation
+        if (shouldSkipAutoValidation(field, currentField)) {
+          return;
+        }
+
+        // If there is a running validation but value changed, restart it
         if (runningValidation) {
-          // Check if value has changed since validation started
-          if (deepEqual(runningValidation.stateSnapshot, currentField.value)) {
-            // Value hasn't changed, continue running existing validation
-            return;
-          } else {
-            // Value changed, restart validation from the beginning
-            cleanupValidation(field);
-          }
-        } else {
-          // No running validation - check if value and numberOfChanges changed from last validation
-          const lastValidatedValue = state.lastValidatedFields[field];
-          const lastValidatedChanges =
-            state.lastValidatedNumberOfChanges[field];
-
-          const shouldSkipValidation =
-            lastValidatedValue !== undefined &&
-            deepEqual(lastValidatedValue, currentField.value) &&
-            lastValidatedChanges !== undefined &&
-            lastValidatedChanges === currentField.meta.numberOfChanges;
-
-          if (shouldSkipValidation) {
-            // Value and numberOfChanges haven't changed from last validation, skip
-            return;
-          }
+          cleanupValidation(field);
         }
 
         // Start scheduled async validation if async validator exists
@@ -1059,7 +1072,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
         };
       }
 
-      /** Main validation orchestrator - handles sync validation and triggers async validation */
+      /** Main validation orchestrator used internally by actions */
       function validateInternal(field: keyof T, action: Action) {
         const state = get();
         // Skip unmounted fields
@@ -1271,7 +1284,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
         // VALIDATION TRIGGER ACTIONS
         // ======================================================================
 
-        /** Main validation orchestrator - handles sync validation and triggers async validation */
+        /** Public validate action: delegates to the internal orchestrator and runs watchers */
         validate: (field, action) => {
           const state = get();
           // Skip unmounted fields
