@@ -393,19 +393,21 @@ export type Actions<T extends DefaultValues, D = unknown> = {
   setDebounceDelayMs: (debounceMs: number) => void;
   setValidatorsMap: <K extends keyof T>(
     field: K,
-    validators?: {
-      validator?:
-        | ValidatorWithFlowControl<T, K, D>
-        | ValidatorWithoutFlowControl<T, K, D>;
-      asyncValidator?: AsyncValidator<T, K, D>;
-      debounceMs?: number;
-    },
+    validators:
+      | {
+          validator?:
+            | ValidatorWithFlowControl<T, K, D>
+            | ValidatorWithoutFlowControl<T, K, D>;
+          asyncValidator?: AsyncValidator<T, K, D>;
+          debounceMs?: number;
+        }
+      | undefined,
   ) => void;
   validate: (field: keyof T, action: Action) => void;
   abortValidation: (field: keyof T) => void;
   setStandardSchemasMap: <K extends keyof T>(
     field: K,
-    standardSchema?: StandardSchemaV1<T[K]>,
+    standardSchema: StandardSchemaV1<T[K]> | undefined,
   ) => void;
   getField: <F extends keyof T>(
     field: F,
