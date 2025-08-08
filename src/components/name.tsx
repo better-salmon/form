@@ -22,15 +22,15 @@ const nameFieldOptions = {
     switch (props.action) {
       case "change": {
         if (issues?.length) {
-          return props.createValidation.warning({ issues });
+          return props.validation.warning({ issues });
         }
-        return props.createValidation.pending();
+        return props.validation.pending();
       }
       case "submit": {
-        return props.createValidation.async.auto(1000);
+        return props.validation.async.auto(1000);
       }
       case "mount": {
-        return props.createValidation.async.force(0);
+        return props.validation.async.force(0);
       }
     }
   },
@@ -44,7 +44,7 @@ const nameFieldOptions = {
       },
     );
 
-    return props.createValidation.warning({
+    return props.validation.warning({
       issues: [{ message: "Name is too long" }],
     });
   },

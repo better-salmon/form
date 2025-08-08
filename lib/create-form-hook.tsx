@@ -75,7 +75,7 @@ export type CheckingState<D = unknown> = {
   details?: D;
 };
 
-export type CreateValidationFactory<D = unknown> = {
+export type ValidationFactory<D = unknown> = {
   valid: (props?: { details?: D }) => ValidState<D>;
   invalid: (props?: {
     issues?: readonly StandardSchemaV1.Issue[];
@@ -94,68 +94,6 @@ export type CreateValidationFactory<D = unknown> = {
     auto: (debounceMs?: number) => AutoValidationFlowControl;
   };
 };
-
-function createCreateValidation<D = unknown>(): CreateValidationFactory<D> {
-  return {
-    valid: (props?: { details?: D }): ValidState<D> =>
-      ({
-        type: "valid",
-        details: props?.details,
-      }) as ValidState<D>,
-    invalid: (props?: {
-      issues?: readonly StandardSchemaV1.Issue[];
-      details?: D;
-    }): InvalidState<D> =>
-      ({
-        type: "invalid",
-        issues: props?.issues ?? [],
-        details: props?.details,
-      }) as InvalidState<D>,
-    warning: (props?: {
-      issues?: readonly StandardSchemaV1.Issue[];
-      details?: D;
-    }): WarningState<D> =>
-      ({
-        type: "warning",
-        issues: props?.issues ?? [],
-        details: props?.details,
-      }) as WarningState<D>,
-    pending: (props?: { details?: D }): PendingState<D> =>
-      ({
-        type: "pending",
-        details: props?.details,
-      }) as PendingState<D>,
-    waiting: (props?: { details?: D }): WaitingState<D> =>
-      ({
-        type: "waiting",
-        details: props?.details,
-      }) as WaitingState<D>,
-    checking: (props?: { details?: D }): CheckingState<D> =>
-      ({
-        type: "checking",
-        details: props?.details,
-      }) as CheckingState<D>,
-    async: {
-      skip: (): SkipValidationFlowControl =>
-        ({
-          type: "async-validator",
-          strategy: "skip",
-        }) as SkipValidationFlowControl,
-      force: (debounceMs?: number): ForceValidationFlowControl =>
-        ({
-          type: "async-validator",
-          strategy: "force",
-          debounceMs,
-        }) as ForceValidationFlowControl,
-      auto: (debounceMs?: number): AutoValidationFlowControl =>
-        ({
-          type: "async-validator",
-          strategy: "auto",
-          debounceMs,
-        }) as AutoValidationFlowControl,
-    },
-  } as const;
-}
 
 // ============================================================================
 // WATCHER TYPES
@@ -272,7 +210,7 @@ type FieldValidatorProps<
   validateWithStandardSchema: () =>
     | readonly StandardSchemaV1.Issue[]
     | undefined;
-  createValidation: CreateValidationFactory<D>;
+  validation: ValidationFactory<D>;
   formApi: {
     getField: <F extends Exclude<keyof T, K>>(
       field: F,
@@ -301,7 +239,7 @@ type FieldAsyncValidatorProps<
   validateWithStandardSchemaAsync: () => Promise<
     readonly StandardSchemaV1.Issue[] | undefined
   >;
-  createValidation: CreateValidationFactory<D>;
+  validation: ValidationFactory<D>;
   formApi: {
     getField: <F extends Exclude<keyof T, K>>(
       field: F,
@@ -612,7 +550,66 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
 ) {
   const store = createStore<Store<T, D> & Actions<T, D>>()(
     mutative((set, get) => {
-      const createValidation = createCreateValidation<D>();
+      const validation = {
+        valid: (props?: { details?: D }): ValidState<D> =>
+          ({
+            type: "valid",
+            details: props?.details,
+          }) as ValidState<D>,
+        invalid: (props?: {
+          issues?: readonly StandardSchemaV1.Issue[];
+          details?: D;
+        }): InvalidState<D> =>
+          ({
+            type: "invalid",
+            issues: props?.issues ?? [],
+            details: props?.details,
+          }) as InvalidState<D>,
+        warning: (props?: {
+          issues?: readonly StandardSchemaV1.Issue[];
+          details?: D;
+        }): WarningState<D> =>
+          ({
+            type: "warning",
+            issues: props?.issues ?? [],
+            details: props?.details,
+          }) as WarningState<D>,
+        pending: (props?: { details?: D }): PendingState<D> =>
+          ({
+            type: "pending",
+            details: props?.details,
+          }) as PendingState<D>,
+        waiting: (props?: { details?: D }): WaitingState<D> =>
+          ({
+            type: "waiting",
+            details: props?.details,
+          }) as WaitingState<D>,
+        checking: (props?: { details?: D }): CheckingState<D> =>
+          ({
+            type: "checking",
+            details: props?.details,
+          }) as CheckingState<D>,
+        async: {
+          skip: (): SkipValidationFlowControl =>
+            ({
+              type: "async-validator",
+              strategy: "skip",
+            }) as SkipValidationFlowControl,
+          force: (debounceMs?: number): ForceValidationFlowControl =>
+            ({
+              type: "async-validator",
+              strategy: "force",
+              debounceMs,
+            }) as ForceValidationFlowControl,
+          auto: (debounceMs?: number): AutoValidationFlowControl =>
+            ({
+              type: "async-validator",
+              strategy: "auto",
+              debounceMs,
+            }) as AutoValidationFlowControl,
+        },
+      } as const satisfies ValidationFactory<D>;
+
       // ========================================================================
       // STORE-LOCAL WATCHER REGISTRY
       // ========================================================================
@@ -892,7 +889,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
         const validationId = incrementValidationId(field);
 
         // Set field state to waiting
-        setFieldState(field, createValidation.waiting());
+        setFieldState(field, validation.waiting());
 
         // Set up debounce timeout with extracted callback
         const timeoutId = setTimeout(() => {
@@ -957,7 +954,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
           } satisfies RunningValidation<T[typeof field]>;
 
           // Set field state to checking and store the value being validated
-          fields[field].validationState = createValidation.checking();
+          fields[field].validationState = validation.checking();
           lastValidated[field] = value;
           lastValidatedNumberOfChanges[field] =
             fields[field].meta.numberOfChanges;
@@ -976,7 +973,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
             standardSchema
               ? await standardValidateAsync(standardSchema, value)
               : undefined,
-          createValidation,
+          validation,
           formApi: {
             getField: getFieldForFormApiAsync,
           },
@@ -1010,7 +1007,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
             // Handle validation error
             setFieldState(
               field,
-              createValidation.invalid({
+              validation.invalid({
                 issues: [
                   {
                     message:
@@ -1089,7 +1086,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
             standardSchema
               ? standardValidate(standardSchema, currentField.value)
               : undefined,
-          createValidation,
+          validation,
           formApi: {
             getField: <F extends Exclude<keyof T, typeof field>>(
               targetField: F,
@@ -1098,7 +1095,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
         });
 
         const resultOrValidationFlowControl =
-          validatorResult ?? createValidation.async.skip();
+          validatorResult ?? validation.async.skip();
 
         if (resultOrValidationFlowControl.type === "async-validator") {
           handleAsyncValidatorFlow(
@@ -1294,7 +1291,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
           // Only update if not already pending
           if (currentState.type !== "pending") {
             mutateFields((fields) => {
-              fields[field].validationState = createValidation.pending();
+              fields[field].validationState = validation.pending();
             });
           }
         },

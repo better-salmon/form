@@ -79,19 +79,19 @@ function PasswordField() {
     },
     validator: (props) => {
       if (!props.value) {
-        return props.createValidation.invalid({
+        return props.validation.invalid({
           issues: [{ message: "Password is required" }],
           details: { someDetail: "" },
         });
       }
 
       if (props.value.length < 6) {
-        return props.createValidation.invalid({
+        return props.validation.invalid({
           issues: [{ message: "Password must be at least 6 characters" }],
         });
       }
 
-      return props.createValidation.valid();
+      return props.validation.valid();
     },
   });
 
@@ -146,16 +146,16 @@ function ConfirmPasswordField() {
       console.log("passwordField", passwordField);
 
       if (!props.value) {
-        return props.createValidation.invalid({
+        return props.validation.invalid({
           issues: [{ message: "Please confirm your password" }],
         });
       }
       if (props.value !== passwordField.value) {
-        return props.createValidation.invalid({
+        return props.validation.invalid({
           issues: [{ message: "Passwords do not match" }],
         });
       }
-      return props.createValidation.valid();
+      return props.validation.valid();
     },
   });
 
