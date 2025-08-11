@@ -15,24 +15,18 @@ export function normalizeNumber(
   let normalized =
     typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
-  if (integer) {
-    switch (integer) {
-      case "ceil": {
-        normalized = Math.ceil(normalized);
-        break;
-      }
-      case "round": {
-        normalized = Math.round(normalized);
-        break;
-      }
-      case "floor": {
-        normalized = Math.floor(normalized);
-        break;
-      }
-
-      default: {
-        break;
-      }
+  switch (integer) {
+    case "ceil": {
+      normalized = Math.ceil(normalized);
+      break;
+    }
+    case "round": {
+      normalized = Math.round(normalized);
+      break;
+    }
+    case "floor": {
+      normalized = Math.floor(normalized);
+      break;
     }
   }
 
