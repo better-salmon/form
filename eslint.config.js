@@ -11,6 +11,7 @@ import eslintPluginDeMorgan from "eslint-plugin-de-morgan";
 import jsxA11y from "eslint-plugin-jsx-a11y";
 import tseslint from "typescript-eslint";
 import { globalIgnores } from "eslint/config";
+import vitest from "@vitest/eslint-plugin";
 
 export default tseslint.config([
   globalIgnores(["dist", "dist-lib", "node_modules", "dist-ssr"]),
@@ -64,6 +65,21 @@ export default tseslint.config([
       "sonarjs/function-return-type": "off",
       // TODO: remove this override when finalizing the work on the lib
       "sonarjs/no-nested-functions": ["error", { threshold: 5 }],
+    },
+  },
+  // Vitest rules scoped to test files
+  {
+    extends: [vitest.configs.all],
+    files: ["**/*.test.{ts,tsx}"],
+    settings: {
+      vitest: {
+        typecheck: true,
+      },
+    },
+    languageOptions: {
+      globals: {
+        ...vitest.environments.env.globals,
+      },
     },
   },
 ]);

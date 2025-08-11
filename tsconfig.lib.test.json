@@ -1,11 +1,15 @@
 {
   "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.lib.tsbuildinfo",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.lib.test.tsbuildinfo",
     "target": "ES2022",
     "useDefineForClassFields": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
+    "types": [
+      "@vitest/browser/matchers",
+      "@vitest/browser/providers/playwright"
+    ],
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -25,6 +29,5 @@
       "@lib/*": ["lib/*"]
     }
   },
-  "include": ["lib"],
-  "exclude": ["lib/**/*.test.{ts,tsx}"]
+  "include": ["lib/**/*.test.{ts,tsx}"]
 }
