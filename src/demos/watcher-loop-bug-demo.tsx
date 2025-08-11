@@ -3,10 +3,13 @@ import { createFormHook } from "@lib/create-form-hook";
 import { cn } from "@/utils/cn";
 import type { Branded } from "@/types/types";
 
+type A = Branded<string, "a">;
+type B = Branded<string, "b">;
+
 // Create typed form hook
 const { useForm } = createFormHook<{
-  a: Branded<string, "a">;
-  b: Branded<string, "b">;
+  a: A;
+  b: B;
 }>();
 
 type LogEntry = { id: string; text: string };
@@ -26,8 +29,8 @@ export function WatcherLoopBugDemo() {
 
   const { Form, Field } = useForm({
     defaultValues: {
-      a: "" as Branded<string, "a">,
-      b: "" as Branded<string, "b">,
+      a: "" as A,
+      b: "" as B,
     },
   });
 
@@ -121,10 +124,10 @@ export function WatcherLoopBugDemo() {
                 ...prev,
                 {
                   id: String(logIdRef.current++),
-                  text: `a watcher (${action}): set a = "${String(watchedValue)}"`,
+                  text: `a watcher (${action}): set a = "${watchedValue}"`,
                 },
               ]);
-              const next = String(watchedValue) as Branded<string, "a">;
+              const next = watchedValue as unknown as A;
               formApi.setValue("a", next);
             },
           }}
@@ -136,7 +139,7 @@ export function WatcherLoopBugDemo() {
                 type="text"
                 value={field.value}
                 onChange={(e) => {
-                  field.handleChange(e.target.value as Branded<string, "a">);
+                  field.handleChange(e.target.value as A);
                 }}
                 className={cn(
                   "w-full rounded-md border-2 border-gray-300 p-2 outline-none",
@@ -159,7 +162,7 @@ export function WatcherLoopBugDemo() {
                         text: `▶️ Trigger: set a = "start" (max ${maxSteps} steps)`,
                       },
                     ]);
-                    field.handleChange("start" as Branded<string, "a">);
+                    field.handleChange("start" as A);
                   }}
                   className="rounded-md bg-blue-500 px-3 py-2 text-sm font-medium text-white hover:bg-blue-600"
                 >
@@ -191,7 +194,7 @@ export function WatcherLoopBugDemo() {
                         text: "🔄 Reset values",
                       },
                     ]);
-                    field.handleChange("" as Branded<string, "a">);
+                    field.handleChange("" as A);
                   }}
                   className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
                 >
@@ -218,10 +221,7 @@ export function WatcherLoopBugDemo() {
               }
 
               remainingRef.current -= 1;
-              const next = `${String(watchedValue)}-copy` as Branded<
-                string,
-                "b"
-              >;
+              const next = `${String(watchedValue)}-copy` as B;
               setLogs((prev) => [
                 ...prev,
                 {
@@ -240,7 +240,7 @@ export function WatcherLoopBugDemo() {
                 type="text"
                 value={field.value}
                 onChange={(e) => {
-                  field.handleChange(e.target.value as Branded<string, "b">);
+                  field.handleChange(e.target.value as B);
                 }}
                 className={cn(
                   "w-full rounded-md border-2 border-gray-300 p-2 outline-none",
@@ -263,7 +263,7 @@ export function WatcherLoopBugDemo() {
                         text: `▶️ Trigger: set b = "start" (max ${maxSteps} steps)`,
                       },
                     ]);
-                    field.handleChange("start" as Branded<string, "b">);
+                    field.handleChange("start" as B);
                   }}
                   className="rounded-md bg-blue-500 px-3 py-2 text-sm font-medium text-white hover:bg-blue-600"
                 >
@@ -279,7 +279,7 @@ export function WatcherLoopBugDemo() {
                         text: "🔄 Reset values",
                       },
                     ]);
-                    field.handleChange("" as Branded<string, "b">);
+                    field.handleChange("" as B);
                   }}
                   className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50"
                 >

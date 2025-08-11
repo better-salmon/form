@@ -1,4 +1,11 @@
-import { createContext, use, useCallback, useMemo, useState } from "react";
+import {
+  createContext,
+  use,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createStore, useStore, type StoreApi } from "zustand";
 import { mutative } from "zustand-mutative";
 import { useShallow } from "zustand/react/shallow";
@@ -1604,7 +1611,6 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     getField,
     registerWatchers,
     unregisterWatchers,
-    executeWatchers,
   } = useStore(
     formStore,
     useShallow((state: Store<T, D> & Actions<T, D>) => ({
@@ -1618,9 +1624,11 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
       getField: state.getField,
       registerWatchers: state.registerWatchers,
       unregisterWatchers: state.unregisterWatchers,
-      executeWatchers: state.executeWatchers,
     })),
   );
+
+  // Track if watchers were registered for the current field name to avoid redundant unregister calls
+  const watchersRegisteredForNameRef = useRef<keyof T | null>(null);
 
   useIsomorphicEffect(() => {
     setValidatorsMap(options.name, {
@@ -1633,11 +1641,14 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     // Register watchers if provided
     if (options.watchFields) {
       registerWatchers(options.name, options.watchFields);
+      watchersRegisteredForNameRef.current = options.name;
     } else {
-      unregisterWatchers(options.name);
+      if (watchersRegisteredForNameRef.current === options.name) {
+        unregisterWatchers(options.name);
+        watchersRegisteredForNameRef.current = null;
+      }
     }
   }, [
-    formStore,
     options.asyncValidator,
     options.debounceMs,
     options.name,
@@ -1663,12 +1674,11 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
       setValidatorsMap(fieldName, undefined);
       setStandardSchemasMap(fieldName, undefined);
       unregisterWatchers(fieldName);
+      watchersRegisteredForNameRef.current = null;
     };
   }, [
-    abortValidation,
-    executeWatchers,
-    formStore,
     options.name,
+    abortValidation,
     setStandardSchemasMap,
     setValidatorsMap,
     setIsMountedMap,
