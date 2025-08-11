@@ -25,6 +25,8 @@ import { dedupePrimitiveArray } from "@lib/dedupe-primitive-array";
 // Register the callback for all possible actions
 const ACTIONS: Action[] = ["change", "blur", "submit", "mount"];
 
+const DEFAULT_WATCHER_MAX_STEPS = 1000;
+
 // ============================================================================
 // UTILITY TYPES
 // ============================================================================
@@ -435,6 +437,8 @@ export type UseFormOptions<T extends DefaultValues> = {
   defaultValues: T;
   /** Global default debounce delay (ms) for async validations when not overridden per-field */
   debounceDelayMs?: number;
+  /** Max allowed steps in a single watcher dispatch chain to prevent feedback loops (default: 1000) */
+  watcherMaxSteps?: number;
 };
 
 export type UseFormResult<T extends DefaultValues, D = unknown> = {
@@ -539,12 +543,57 @@ function getFieldNames<T extends DefaultValues, D = unknown>(
 }
 
 /**
+ * Generic number normalizer with bounds, integer coercion, and fallback.
+ */
+function normalizeNumber(
+  value: unknown,
+  options: {
+    fallback: number;
+    min?: number;
+    max?: number;
+    integer?: "floor" | "ceil" | "round";
+  },
+): number {
+  const { fallback, min, max, integer } = options;
+
+  let normalized =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+  if (integer) {
+    switch (integer) {
+      case "ceil": {
+        normalized = Math.ceil(normalized);
+        break;
+      }
+      case "round": {
+        normalized = Math.round(normalized);
+        break;
+      }
+      case "floor": {
+        normalized = Math.floor(normalized);
+        break;
+      }
+
+      default: {
+        break;
+      }
+    }
+  }
+
+  if (typeof min === "number") {
+    normalized = Math.max(min, normalized);
+  }
+  if (typeof max === "number") {
+    normalized = Math.min(max, normalized);
+  }
+  return normalized;
+}
+
+/**
  * Normalizes a debounce value to a non-negative finite number. Non-finite/invalid -> 0
  */
 function normalizeDebounceMs(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.max(0, value)
-    : 0;
+  return normalizeNumber(value, { fallback: 0, min: 0, integer: "floor" });
 }
 
 // ============================================================================
@@ -634,14 +683,20 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
         maxSteps: number;
       };
 
+      const configuredMaxSteps = normalizeNumber(options.watcherMaxSteps, {
+        fallback: DEFAULT_WATCHER_MAX_STEPS,
+        min: 1,
+        integer: "floor",
+      });
+
       const watcherTransaction: WatcherTransactionState = {
         active: false,
         visitedEdges: new Set<string>(),
         steps: 0,
-        maxSteps: 1000,
+        maxSteps: configuredMaxSteps,
       };
 
-      function runInWatcherTransaction<T>(fn: () => T): T {
+      function runInWatcherTransaction<TResult>(fn: () => TResult): TResult {
         if (!watcherTransaction.active) {
           watcherTransaction.active = true;
           watcherTransaction.visitedEdges.clear();
@@ -1483,7 +1538,16 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
               if (watcherTransaction.steps >= watcherTransaction.maxSteps) {
                 // Hard stop to avoid unbounded loops
                 console.warn(
-                  `Watcher chain exceeded ${watcherTransaction.maxSteps} steps; breaking to avoid a feedback loop`,
+                  "Watcher chain exceeded max steps; breaking to avoid a feedback loop",
+                  {
+                    maxSteps: watcherTransaction.maxSteps,
+                    steps: watcherTransaction.steps,
+                    watchKey,
+                    edgeKey,
+                    action,
+                    watchedField: String(watchedField),
+                    targetField: String(watcher.targetField),
+                  },
                 );
                 break;
               }
