@@ -1,4 +1,11 @@
-import { createContext, use, useCallback, useMemo, useState } from "react";
+import {
+  createContext,
+  use,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createStore, useStore, type StoreApi } from "zustand";
 import { mutative } from "zustand-mutative";
 import { useShallow } from "zustand/react/shallow";
@@ -10,6 +17,7 @@ import {
   standardValidateAsync,
 } from "@lib/standard-validate";
 import { dedupePrimitiveArray } from "@lib/dedupe-primitive-array";
+import { normalizeNumber, normalizeDebounceMs } from "@lib/normalize-number";
 
 // ============================================================================
 // CONSTANTS
@@ -17,6 +25,8 @@ import { dedupePrimitiveArray } from "@lib/dedupe-primitive-array";
 
 // Register the callback for all possible actions
 const ACTIONS: Action[] = ["change", "blur", "submit", "mount"];
+
+export const DEFAULT_WATCHER_MAX_STEPS = 1000;
 
 // ============================================================================
 // UTILITY TYPES
@@ -428,6 +438,8 @@ export type UseFormOptions<T extends DefaultValues> = {
   defaultValues: T;
   /** Global default debounce delay (ms) for async validations when not overridden per-field */
   debounceDelayMs?: number;
+  /** Max allowed steps in a single watcher dispatch chain to prevent feedback loops (default: 1000) */
+  watcherMaxSteps?: number;
 };
 
 export type UseFormResult<T extends DefaultValues, D = unknown> = {
@@ -531,15 +543,6 @@ function getFieldNames<T extends DefaultValues, D = unknown>(
   return Object.keys(fieldsMap) as (keyof T)[];
 }
 
-/**
- * Normalizes a debounce value to a non-negative finite number. Non-finite/invalid -> 0
- */
-function normalizeDebounceMs(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.max(0, value)
-    : 0;
-}
-
 // ============================================================================
 // STORE CREATION
 // ============================================================================
@@ -618,6 +621,66 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
 
       /** Store-local registry to store watchers for this form instance */
       const watchersMap = new Map<string, StoredWatcher<T, D>[]>();
+
+      // Guard to prevent watcher feedback loops within a single dispatch chain
+      type WatcherTransactionState = {
+        active: boolean;
+        depth: number;
+        visitedEdges: Set<string>;
+        steps: number;
+        maxSteps: number;
+        bailOut: boolean;
+      };
+
+      const configuredMaxSteps = normalizeNumber(options.watcherMaxSteps, {
+        fallback: DEFAULT_WATCHER_MAX_STEPS,
+        min: 1,
+        integer: "floor",
+      });
+
+      const watcherTransaction: WatcherTransactionState = {
+        active: false,
+        depth: 0,
+        visitedEdges: new Set<string>(),
+        steps: 0,
+        maxSteps: configuredMaxSteps,
+        bailOut: false,
+      };
+
+      function runInWatcherTransaction<TResult>(fn: () => TResult): TResult {
+        const isRoot = watcherTransaction.depth === 0;
+        watcherTransaction.depth += 1;
+        if (isRoot) {
+          watcherTransaction.active = true;
+          watcherTransaction.visitedEdges.clear();
+          watcherTransaction.steps = 0;
+          watcherTransaction.bailOut = false;
+        }
+        try {
+          return fn();
+        } finally {
+          watcherTransaction.depth -= 1;
+          if (watcherTransaction.depth === 0) {
+            watcherTransaction.active = false;
+            watcherTransaction.visitedEdges.clear();
+            watcherTransaction.steps = 0;
+            watcherTransaction.bailOut = false;
+          }
+        }
+      }
+
+      function makeEdgeKey(
+        watchedField: keyof T,
+        targetField: keyof T,
+        action: Action,
+      ): string {
+        // Keys are strings (DefaultValues uses Record<string, unknown>)
+        return JSON.stringify([
+          String(watchedField),
+          String(targetField),
+          action,
+        ]);
+      }
 
       // ========================================================================
       // TYPED HELPER FUNCTIONS FOR CLEAN MUTATIONS
@@ -1260,26 +1323,31 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
 
         /** Submits specified fields (or all fields if none specified) */
         submit: (fields) => {
-          const state = get();
-          const fieldsToSubmit = new Set(
-            fields ?? getFieldNames(state.fieldsMap),
-          );
+          runInWatcherTransaction(() => {
+            const state = get();
+            const fieldsToSubmit = new Set(
+              fields ?? getFieldNames(state.fieldsMap),
+            );
 
-          // Update submission metadata and trigger validation for each field
-          for (const field of fieldsToSubmit) {
-            // Skip unmounted fields
-            if (!state.isMountedMap[field]) {
-              continue;
+            // Update submission metadata and trigger validation for each field
+            for (const field of fieldsToSubmit) {
+              // Skip unmounted fields
+              if (!state.isMountedMap[field]) {
+                continue;
+              }
+              mutateFields((fields) => {
+                fields[field].meta.numberOfSubmissions++;
+              });
+
+              validateInternal(field, "submit");
+
+              // Execute watchers for this submit action
+              get().executeWatchers(field, "submit");
+              if (watcherTransaction.bailOut) {
+                break;
+              }
             }
-            mutateFields((fields) => {
-              fields[field].meta.numberOfSubmissions++;
-            });
-
-            validateInternal(field, "submit");
-
-            // Execute watchers for this submit action
-            get().executeWatchers(field, "submit");
-          }
+          });
         },
 
         // ======================================================================
@@ -1426,14 +1494,51 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
           }
         },
 
-        /** Executes watchers for a watched field and action */
+        /** Executes watchers for a watched field and action with loop protection */
         executeWatchers: (watchedField: keyof T, action: Action) => {
-          const watchKey = `${String(watchedField)}:${action}`;
-          const watchers = watchersMap.get(watchKey) ?? [];
+          runInWatcherTransaction(() => {
+            const watchKey = `${String(watchedField)}:${action}`;
+            const watchers = watchersMap.get(watchKey) ?? [];
 
-          for (const watcher of watchers) {
-            watcher.execute(action, get, validateInternal);
-          }
+            for (const watcher of watchers) {
+              // Early bailout if limit already reached in this transaction
+              if (watcherTransaction.bailOut) {
+                break;
+              }
+              // Edge key prevents running the same watched->target pair repeatedly
+              const edgeKey = makeEdgeKey(
+                watchedField,
+                watcher.targetField,
+                action,
+              );
+
+              if (watcherTransaction.visitedEdges.has(edgeKey)) {
+                continue;
+              }
+
+              if (watcherTransaction.steps >= watcherTransaction.maxSteps) {
+                // Hard stop to avoid unbounded loops
+                watcherTransaction.bailOut = true;
+                console.warn(
+                  "Watcher chain exceeded max steps; breaking to avoid a feedback loop",
+                  {
+                    maxSteps: watcherTransaction.maxSteps,
+                    steps: watcherTransaction.steps,
+                    watchKey,
+                    edgeKey,
+                    action,
+                    watchedField: String(watchedField),
+                    targetField: String(watcher.targetField),
+                  },
+                );
+                break;
+              }
+
+              watcherTransaction.visitedEdges.add(edgeKey);
+              watcherTransaction.steps += 1;
+              watcher.execute(action, get, validateInternal);
+            }
+          });
         },
       };
     }),
@@ -1552,7 +1657,6 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     getField,
     registerWatchers,
     unregisterWatchers,
-    executeWatchers,
   } = useStore(
     formStore,
     useShallow((state: Store<T, D> & Actions<T, D>) => ({
@@ -1566,9 +1670,11 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
       getField: state.getField,
       registerWatchers: state.registerWatchers,
       unregisterWatchers: state.unregisterWatchers,
-      executeWatchers: state.executeWatchers,
     })),
   );
+
+  // Track if watchers were registered for the current field name to avoid redundant unregister calls
+  const watchersRegisteredForNameRef = useRef<keyof T | null>(null);
 
   useIsomorphicEffect(() => {
     setValidatorsMap(options.name, {
@@ -1581,9 +1687,14 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     // Register watchers if provided
     if (options.watchFields) {
       registerWatchers(options.name, options.watchFields);
+      watchersRegisteredForNameRef.current = options.name;
+    } else {
+      if (watchersRegisteredForNameRef.current === options.name) {
+        unregisterWatchers(options.name);
+        watchersRegisteredForNameRef.current = null;
+      }
     }
   }, [
-    formStore,
     options.asyncValidator,
     options.debounceMs,
     options.name,
@@ -1593,6 +1704,7 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     registerWatchers,
     setStandardSchemasMap,
     setValidatorsMap,
+    unregisterWatchers,
   ]);
 
   useIsomorphicEffect(() => {
@@ -1608,12 +1720,11 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
       setValidatorsMap(fieldName, undefined);
       setStandardSchemasMap(fieldName, undefined);
       unregisterWatchers(fieldName);
+      watchersRegisteredForNameRef.current = null;
     };
   }, [
-    abortValidation,
-    executeWatchers,
-    formStore,
     options.name,
+    abortValidation,
     setStandardSchemasMap,
     setValidatorsMap,
     setIsMountedMap,

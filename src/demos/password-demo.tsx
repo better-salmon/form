@@ -2,9 +2,11 @@ import { createFormHook } from "@lib/create-form-hook";
 import { cn } from "@/utils/cn";
 import type { Branded } from "@/types/types";
 
+type Password = Branded<string, "password">;
+
 type PasswordForm = {
-  password: Branded<string, "password">;
-  confirmPassword: Branded<string, "password">;
+  password: Password;
+  confirmPassword: Password;
 };
 
 type PasswordFormDetails = {
@@ -19,8 +21,8 @@ const { useForm, useField, useFieldDependencies } = createFormHook<
 export function PasswordDemo() {
   const { Form } = useForm({
     defaultValues: {
-      password: "" as Branded<string, "password">,
-      confirmPassword: "" as Branded<string, "password">,
+      password: "" as Password,
+      confirmPassword: "" as Password,
     },
   });
 
@@ -104,7 +106,7 @@ function PasswordField() {
           name={field.name}
           value={field.value}
           onChange={(e) => {
-            field.handleChange(e.target.value as Branded<string, "password">);
+            field.handleChange(e.target.value as Password);
           }}
           onBlur={field.handleBlur}
           onKeyDown={(e) => {
@@ -168,7 +170,7 @@ function ConfirmPasswordField() {
           name={field.name}
           value={field.value}
           onChange={(e) => {
-            field.handleChange(e.target.value as Branded<string, "password">);
+            field.handleChange(e.target.value as Password);
           }}
           onBlur={field.handleBlur}
           onKeyDown={(e) => {
