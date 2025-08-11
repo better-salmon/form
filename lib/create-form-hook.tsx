@@ -17,6 +17,7 @@ import {
   standardValidateAsync,
 } from "@lib/standard-validate";
 import { dedupePrimitiveArray } from "@lib/dedupe-primitive-array";
+import { normalizeNumber, normalizeDebounceMs } from "@lib/normalize-number";
 
 // ============================================================================
 // CONSTANTS
@@ -25,7 +26,7 @@ import { dedupePrimitiveArray } from "@lib/dedupe-primitive-array";
 // Register the callback for all possible actions
 const ACTIONS: Action[] = ["change", "blur", "submit", "mount"];
 
-const DEFAULT_WATCHER_MAX_STEPS = 1000;
+export const DEFAULT_WATCHER_MAX_STEPS = 1000;
 
 // ============================================================================
 // UTILITY TYPES
@@ -542,60 +543,6 @@ function getFieldNames<T extends DefaultValues, D = unknown>(
   return Object.keys(fieldsMap) as (keyof T)[];
 }
 
-/**
- * Generic number normalizer with bounds, integer coercion, and fallback.
- */
-function normalizeNumber(
-  value: unknown,
-  options: {
-    fallback: number;
-    min?: number;
-    max?: number;
-    integer?: "floor" | "ceil" | "round";
-  },
-): number {
-  const { fallback, min, max, integer } = options;
-
-  let normalized =
-    typeof value === "number" && Number.isFinite(value) ? value : fallback;
-
-  if (integer) {
-    switch (integer) {
-      case "ceil": {
-        normalized = Math.ceil(normalized);
-        break;
-      }
-      case "round": {
-        normalized = Math.round(normalized);
-        break;
-      }
-      case "floor": {
-        normalized = Math.floor(normalized);
-        break;
-      }
-
-      default: {
-        break;
-      }
-    }
-  }
-
-  if (typeof min === "number") {
-    normalized = Math.max(min, normalized);
-  }
-  if (typeof max === "number") {
-    normalized = Math.min(max, normalized);
-  }
-  return normalized;
-}
-
-/**
- * Normalizes a debounce value to a non-negative finite number. Non-finite/invalid -> 0
- */
-function normalizeDebounceMs(value: unknown): number {
-  return normalizeNumber(value, { fallback: 0, min: 0, integer: "floor" });
-}
-
 // ============================================================================
 // STORE CREATION
 // ============================================================================
@@ -681,6 +628,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
         visitedEdges: Set<string>;
         steps: number;
         maxSteps: number;
+        bailOut: boolean;
       };
 
       const configuredMaxSteps = normalizeNumber(options.watcherMaxSteps, {
@@ -694,6 +642,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
         visitedEdges: new Set<string>(),
         steps: 0,
         maxSteps: configuredMaxSteps,
+        bailOut: false,
       };
 
       function runInWatcherTransaction<TResult>(fn: () => TResult): TResult {
@@ -701,15 +650,30 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
           watcherTransaction.active = true;
           watcherTransaction.visitedEdges.clear();
           watcherTransaction.steps = 0;
+          watcherTransaction.bailOut = false;
           try {
             return fn();
           } finally {
             watcherTransaction.active = false;
             watcherTransaction.visitedEdges.clear();
             watcherTransaction.steps = 0;
+            watcherTransaction.bailOut = false;
           }
         }
         return fn();
+      }
+
+      function makeEdgeKey(
+        watchedField: keyof T,
+        targetField: keyof T,
+        action: Action,
+      ): string {
+        // Keys are strings (DefaultValues uses Record<string, unknown>)
+        return JSON.stringify([
+          String(watchedField),
+          String(targetField),
+          action,
+        ]);
       }
 
       // ========================================================================
@@ -1353,26 +1317,31 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
 
         /** Submits specified fields (or all fields if none specified) */
         submit: (fields) => {
-          const state = get();
-          const fieldsToSubmit = new Set(
-            fields ?? getFieldNames(state.fieldsMap),
-          );
+          runInWatcherTransaction(() => {
+            const state = get();
+            const fieldsToSubmit = new Set(
+              fields ?? getFieldNames(state.fieldsMap),
+            );
 
-          // Update submission metadata and trigger validation for each field
-          for (const field of fieldsToSubmit) {
-            // Skip unmounted fields
-            if (!state.isMountedMap[field]) {
-              continue;
+            // Update submission metadata and trigger validation for each field
+            for (const field of fieldsToSubmit) {
+              // Skip unmounted fields
+              if (!state.isMountedMap[field]) {
+                continue;
+              }
+              mutateFields((fields) => {
+                fields[field].meta.numberOfSubmissions++;
+              });
+
+              validateInternal(field, "submit");
+
+              // Execute watchers for this submit action
+              get().executeWatchers(field, "submit");
+              if (watcherTransaction.bailOut) {
+                break;
+              }
             }
-            mutateFields((fields) => {
-              fields[field].meta.numberOfSubmissions++;
-            });
-
-            validateInternal(field, "submit");
-
-            // Execute watchers for this submit action
-            get().executeWatchers(field, "submit");
-          }
+          });
         },
 
         // ======================================================================
@@ -1526,10 +1495,16 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
             const watchers = watchersMap.get(watchKey) ?? [];
 
             for (const watcher of watchers) {
+              // Early bailout if limit already reached in this transaction
+              if (watcherTransaction.bailOut) {
+                break;
+              }
               // Edge key prevents running the same watched->target pair repeatedly
-              const edgeKey = `${String(watchedField)}->${String(
+              const edgeKey = makeEdgeKey(
+                watchedField,
                 watcher.targetField,
-              )}:${action}`;
+                action,
+              );
 
               if (watcherTransaction.visitedEdges.has(edgeKey)) {
                 continue;
@@ -1537,6 +1512,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
 
               if (watcherTransaction.steps >= watcherTransaction.maxSteps) {
                 // Hard stop to avoid unbounded loops
+                watcherTransaction.bailOut = true;
                 console.warn(
                   "Watcher chain exceeded max steps; breaking to avoid a feedback loop",
                   {
