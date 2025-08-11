@@ -625,6 +625,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
       // Guard to prevent watcher feedback loops within a single dispatch chain
       type WatcherTransactionState = {
         active: boolean;
+        depth: number;
         visitedEdges: Set<string>;
         steps: number;
         maxSteps: number;
@@ -639,6 +640,7 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
 
       const watcherTransaction: WatcherTransactionState = {
         active: false,
+        depth: 0,
         visitedEdges: new Set<string>(),
         steps: 0,
         maxSteps: configuredMaxSteps,
@@ -646,21 +648,25 @@ function createFormStoreMutative<T extends DefaultValues, D = unknown>(
       };
 
       function runInWatcherTransaction<TResult>(fn: () => TResult): TResult {
-        if (!watcherTransaction.active) {
+        const isRoot = watcherTransaction.depth === 0;
+        watcherTransaction.depth += 1;
+        if (isRoot) {
           watcherTransaction.active = true;
           watcherTransaction.visitedEdges.clear();
           watcherTransaction.steps = 0;
           watcherTransaction.bailOut = false;
-          try {
-            return fn();
-          } finally {
+        }
+        try {
+          return fn();
+        } finally {
+          watcherTransaction.depth -= 1;
+          if (watcherTransaction.depth === 0) {
             watcherTransaction.active = false;
             watcherTransaction.visitedEdges.clear();
             watcherTransaction.steps = 0;
             watcherTransaction.bailOut = false;
           }
         }
-        return fn();
       }
 
       function makeEdgeKey(
