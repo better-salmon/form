@@ -4,6 +4,7 @@ import { WatcherDemo } from "@/demos/watcher-demo";
 import { WatcherLoopBugDemo } from "@/demos/watcher-loop-bug-demo";
 import { WatcherCascadesDemo } from "@/demos/watcher-cascades-demo";
 import { PasswordDemo } from "@/demos/password-demo";
+import { WatcherAsyncDemo } from "@/demos/watcher-async-demo";
 import { ContactDemo } from "@/demos/contact-demo";
 import { cn } from "@/utils/cn";
 
@@ -31,6 +32,12 @@ const DEMOS = [
     name: "Watcher Cascades",
     component: WatcherCascadesDemo,
     description: "Legit cascades: chain and diamond propagation",
+  },
+  {
+    id: "watcher-async",
+    name: "Watcher Async",
+    component: WatcherAsyncDemo,
+    description: "Watcher schedules async work and cancels stale runs",
   },
   {
     id: "password",
