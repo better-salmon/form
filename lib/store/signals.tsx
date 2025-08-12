@@ -1,52 +1,55 @@
 import { useSyncExternalStore } from "react";
+import { unstable_batchedUpdates } from "react-dom";
 
 type Subscriber = () => void;
 type Unsubscribe = () => void;
 
 export type Signal<T> = {
-  get value(): T;
-  set value(v: T);
+  peekValue(): T;
+  getValue(): T;
+  setValue(v: T): void;
   subscribe(cb: Subscriber): Unsubscribe;
-  getSnapshot(): T;
 };
 
 export type ReadonlySignal<T> = {
-  get value(): T;
+  peekValue(): T;
+  getValue(): T;
   subscribe(cb: Subscriber): Unsubscribe;
-  getSnapshot(): T;
 };
 
 let currentSubscriber: Subscriber | null = null;
 
-export function signal<T>(): Signal<T | undefined>;
-export function signal<T>(initialValue: T): Signal<T>;
-export function signal<T>(initialValue?: T) {
+export function signal<T>(initialValue: T) {
   const subscriptions = new Set<Subscriber>();
-  let _value = initialValue as T;
+  let _value = initialValue;
 
   return {
-    get value(): T {
+    peekValue(): T {
+      return _value;
+    },
+    getValue(): T {
       if (currentSubscriber) {
         subscriptions.add(currentSubscriber);
       }
       return _value;
     },
-    set value(updated: T) {
+    setValue(updated: T) {
+      if (Object.is(_value, updated)) {
+        return;
+      }
       _value = updated;
       // notify all subscribers
-      for (const fn of subscriptions) {
-        fn();
-      }
+      unstable_batchedUpdates(() => {
+        for (const fn of subscriptions) {
+          fn();
+        }
+      });
     },
     subscribe(cb: Subscriber) {
       subscriptions.add(cb);
-      return () => subscriptions.delete(cb);
-    },
-    getSnapshot(): T {
-      if (currentSubscriber) {
-        subscriptions.add(currentSubscriber);
-      }
-      return _value;
+      return () => {
+        subscriptions.delete(cb);
+      };
     },
   };
 }
@@ -61,35 +64,14 @@ export function effect(fn: Subscriber): void {
 }
 
 export function derived<T>(fn: () => T): ReadonlySignal<T> {
-  // Start without an initial value; we'll set it via the effect below.
-  // eslint-disable-next-line unicorn/no-useless-undefined -- it's ok here
-  const s = signal<T | undefined>(undefined);
+  // Seed with an initial value to avoid undefined and TS assertions
+  const derivedSignal = signal<T>(fn());
   effect(() => {
-    s.value = fn();
+    derivedSignal.setValue(fn());
   });
-  return s as ReadonlySignal<T>;
+  return derivedSignal;
 }
 
-export function peek<S extends ReadonlySignal<unknown> | Signal<unknown>>(
-  s: S,
-): S["value"] {
-  const previousSubscriber = currentSubscriber;
-  // Temporarily disable tracking to avoid subscribing the caller
-  currentSubscriber = null;
-  try {
-    return s.getSnapshot();
-  } finally {
-    currentSubscriber = previousSubscriber;
-  }
-}
-
-export function useSignal<S extends Signal<unknown>>(s: S): S["value"] {
-  return useSyncExternalStore(
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- it's ok here
-    s.subscribe, // subscribe to changes
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- it's ok here
-    s.getSnapshot, // get current snapshot (client)
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- it's ok here
-    s.getSnapshot, // get snapshot for SSR
-  );
+export function useSignal<T>(s: ReadonlySignal<T> | Signal<T>): T {
+  return useSyncExternalStore(s.subscribe, s.peekValue, s.peekValue);
 }

@@ -29,5 +29,5 @@
       "@lib/*": ["lib/*"]
     }
   },
-  "include": ["lib/**/*.test.{ts,tsx}"]
+  "include": ["lib/**/*.test.ts", "lib/**/*.test.tsx"]
 }

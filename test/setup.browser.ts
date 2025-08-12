@@ -4,6 +4,7 @@
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 // Only configure vitest-browser-react in actual browser runs
+// eslint-disable-next-line unicorn/no-typeof-undefined
 if (typeof document !== "undefined") {
   await import("vitest-browser-react");
   const { configure } = await import("vitest-browser-react/pure");

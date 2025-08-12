@@ -39,6 +39,7 @@ export default tseslint.config([
           "./tsconfig.app.json",
           "./tsconfig.lib.json",
           "./tsconfig.fake.json",
+          "./tsconfig.lib.test.json",
         ],
         tsconfigRootDir: import.meta.dirname,
       },
@@ -48,6 +49,7 @@ export default tseslint.config([
       eqeqeq: "warn",
       "unicorn/prevent-abbreviations": "off",
       "unicorn/no-null": "off",
+      "unicorn/no-useless-undefined": "off",
       "react-refresh/only-export-components": "off",
       "unicorn/no-typeof-undefined": ["error", { checkGlobalVariables: true }],
       "react-hooks/exhaustive-deps": [

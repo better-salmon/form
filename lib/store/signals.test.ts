@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
-import { signal, effect, derived, peek } from "@lib/store/signals";
+import { signal, effect, derived } from "@lib/store/signals";
 
 describe(signal, () => {
   it("returns undefined when created without initial value", () => {
     expect.hasAssertions();
 
-    const count = signal<number>();
+    const count = signal<number | undefined>(undefined);
 
-    expect(count.value).toBeUndefined();
+    expect(count.peekValue()).toBeUndefined();
   });
 
   it("reads and writes the current value", () => {
@@ -15,14 +15,14 @@ describe(signal, () => {
 
     const count = signal(1);
 
-    expect(count.value).toBe(1);
+    expect(count.getValue()).toBe(1);
 
-    count.value = 2;
+    count.setValue(2);
 
-    expect(count.value).toBe(2);
+    expect(count.getValue()).toBe(2);
   });
 
-  it("notifies subscribers on every set (even if value is the same)", () => {
+  it("notifies subscribers only when value changes", () => {
     expect.hasAssertions();
 
     const count = signal(0);
@@ -30,20 +30,19 @@ describe(signal, () => {
 
     effect(() => {
       // Access to subscribe
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      count.value;
+      count.getValue();
       runCount += 1;
     });
 
     expect(runCount).toBe(1);
 
-    count.value = 0; // same value, should still notify
+    count.setValue(0); // same value, should NOT notify
+
+    expect(runCount).toBe(1);
+
+    count.setValue(1); // different value
 
     expect(runCount).toBe(2);
-
-    count.value = 1; // different value
-
-    expect(runCount).toBe(3);
   });
 
   it("does not subscribe the same effect more than once when read multiple times", () => {
@@ -54,16 +53,14 @@ describe(signal, () => {
 
     effect(() => {
       // Multiple reads within the same effect should not duplicate the subscription
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      count.value;
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      count.value;
+      count.getValue();
+      count.getValue();
       runCount += 1;
     });
 
     expect(runCount).toBe(1);
 
-    count.value = 1;
+    count.setValue(1);
 
     expect(runCount).toBe(2); // not 3
   });
@@ -77,16 +74,16 @@ describe(signal, () => {
     const count = signal(0);
 
     effect(() => {
-      spyA(count.value);
+      spyA(count.getValue());
     });
     effect(() => {
-      spyB(count.value);
+      spyB(count.getValue());
     });
 
     expect(spyA).toHaveBeenCalledTimes(1);
     expect(spyB).toHaveBeenCalledTimes(1);
 
-    count.value = 1;
+    count.setValue(1);
 
     expect(spyA).toHaveBeenCalledTimes(2);
     expect(spyB).toHaveBeenCalledTimes(2);
@@ -98,38 +95,38 @@ describe(derived, () => {
     expect.hasAssertions();
 
     const base = signal(2);
-    const double = derived(() => base.value * 2);
+    const double = derived(() => base.getValue() * 2);
 
-    expect(double.value).toBe(4);
+    expect(double.getValue()).toBe(4);
   });
 
   it("recomputes when dependency changes", () => {
     expect.hasAssertions();
 
     const base = signal(1);
-    const double = derived(() => base.value * 2);
+    const double = derived(() => base.getValue() * 2);
 
-    expect(double.value).toBe(2);
+    expect(double.getValue()).toBe(2);
 
-    base.value = 3;
+    base.setValue(3);
 
-    expect(double.value).toBe(6);
+    expect(double.getValue()).toBe(6);
   });
 
   it("notifies subscribers when the derived value changes", () => {
     expect.hasAssertions();
 
     const base = signal(1);
-    const double = derived(() => base.value * 2);
+    const double = derived(() => base.getValue() * 2);
 
     let latest = 0;
     effect(() => {
-      latest = double.value;
+      latest = double.getValue();
     });
 
     expect(latest).toBe(2);
 
-    base.value = 5;
+    base.setValue(5);
 
     expect(latest).toBe(10);
   });
@@ -138,36 +135,36 @@ describe(derived, () => {
     expect.hasAssertions();
 
     const a = signal(1);
-    const b = derived(() => a.value + 1);
-    const c = derived(() => b.value * 3);
+    const b = derived(() => a.getValue() + 1);
+    const c = derived(() => b.getValue() * 3);
 
-    expect(c.value).toBe(6); // (1 + 1) * 3
+    expect(c.getValue()).toBe(6); // (1 + 1) * 3
 
-    a.value = 3; // b = 4, c = 12
+    a.setValue(3); // b = 4, c = 12
 
-    expect(c.value).toBe(12);
+    expect(c.getValue()).toBe(12);
   });
 });
 
-describe(peek, () => {
+describe("peek", () => {
   it("returns the current value without subscribing", () => {
     expect.hasAssertions();
 
     const count = signal(1);
 
-    expect(peek(count)).toBe(1);
+    expect(count.peekValue()).toBe(1);
 
     let runCount = 0;
     effect(() => {
-      peek(count);
+      count.peekValue();
       runCount += 1;
     });
 
     expect(runCount).toBe(1);
 
-    count.value = 2;
+    count.setValue(2);
 
-    expect(peek(count)).toBe(2);
+    expect(count.peekValue()).toBe(2);
     expect(runCount).toBe(1);
   });
 
@@ -175,21 +172,21 @@ describe(peek, () => {
     expect.hasAssertions();
 
     const base = signal(2);
-    const doubled = derived(() => base.value * 2);
+    const doubled = derived(() => base.getValue() * 2);
 
-    expect(peek(doubled)).toBe(4);
+    expect(doubled.peekValue()).toBe(4);
 
     let runCount = 0;
     effect(() => {
-      peek(doubled);
+      doubled.peekValue();
       runCount += 1;
     });
 
     expect(runCount).toBe(1);
 
-    base.value = 3; // triggers derived recompute
+    base.setValue(3); // triggers derived recompute
 
-    expect(peek(doubled)).toBe(6);
+    expect(doubled.peekValue()).toBe(6);
     expect(runCount).toBe(1);
   });
 });
