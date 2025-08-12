@@ -7,6 +7,7 @@ import { PasswordDemo } from "@/demos/password-demo";
 import { WatcherAsyncDemo } from "@/demos/watcher-async-demo";
 import { ContactDemo } from "@/demos/contact-demo";
 import { cn } from "@/utils/cn";
+import { UseSignalDemo } from "@/demos/use-signal-demo";
 
 const DEMOS = [
   {
@@ -14,6 +15,12 @@ const DEMOS = [
     name: "Contact Demo",
     component: ContactDemo,
     description: "Simple name, email, and phone form",
+  },
+  {
+    id: "use-signal",
+    name: "useSignal Demo",
+    component: UseSignalDemo,
+    description: "Fine-grained re-renders with signals",
   },
   {
     id: "watcher",

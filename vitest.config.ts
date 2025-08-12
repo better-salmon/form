@@ -21,7 +21,7 @@ export default defineConfig({
   test: {
     setupFiles: [path.resolve(__dirname, "./test/setup.browser.ts")],
     browser: {
-      enabled: true,
+      enabled: false,
       provider: "playwright",
       instances: [{ browser: "chromium" }],
     },

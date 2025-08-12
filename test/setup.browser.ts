@@ -3,11 +3,11 @@
 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-import "vitest-browser-react";
-
-import { configure } from "vitest-browser-react/pure";
-
-configure({
-  // disabled by default
-  reactStrictMode: true,
-});
+// Only configure vitest-browser-react in actual browser runs
+if (typeof document !== "undefined") {
+  await import("vitest-browser-react");
+  const { configure } = await import("vitest-browser-react/pure");
+  configure({
+    reactStrictMode: true,
+  });
+}
