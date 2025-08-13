@@ -12,9 +12,17 @@ import jsxA11y from "eslint-plugin-jsx-a11y";
 import tseslint from "typescript-eslint";
 import { globalIgnores } from "eslint/config";
 import vitest from "@vitest/eslint-plugin";
+import playwright from "eslint-plugin-playwright";
 
 export default tseslint.config([
-  globalIgnores(["dist", "dist-lib", "node_modules", "dist-ssr"]),
+  globalIgnores([
+    "dist",
+    "dist-lib",
+    "node_modules",
+    "dist-ssr",
+    "test-results",
+    "playwright-report",
+  ]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [
@@ -40,6 +48,7 @@ export default tseslint.config([
           "./tsconfig.lib.json",
           "./tsconfig.fake.json",
           "./tsconfig.lib.test.json",
+          "./tsconfig.playwright.json",
         ],
         tsconfigRootDir: import.meta.dirname,
       },
@@ -83,5 +92,9 @@ export default tseslint.config([
         ...vitest.environments.env.globals,
       },
     },
+  },
+  {
+    extends: [playwright.configs["flat/recommended"]],
+    files: ["tests/e2e/**/*.ts"],
   },
 ]);

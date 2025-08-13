@@ -3,3 +3,5 @@ dist
 dist-ssr
 build
 pnpm-lock.yaml
+test-results
+playwright-report
