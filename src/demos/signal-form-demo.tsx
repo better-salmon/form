@@ -50,6 +50,10 @@ export function SignalFormDemo() {
 function NameField() {
   const field = useSignalField({
     name: "name",
+    respond: (props) => {
+      console.log(props);
+    },
+    on: { from: { email: ["change"] } },
   });
 
   return (
@@ -63,6 +67,7 @@ function NameField() {
           onChange={(e) => {
             field.handleChange(e.target.value as Name);
           }}
+          onBlur={field.handleBlur}
           className={
             "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none"
           }
@@ -76,6 +81,9 @@ function NameField() {
 function EmailField() {
   const field = useSignalField({
     name: "email",
+    respond: (ctx) => {
+      console.log(ctx);
+    },
   });
 
   return (
@@ -89,6 +97,7 @@ function EmailField() {
           onChange={(e) => {
             field.handleChange(e.target.value as Email);
           }}
+          onBlur={field.handleBlur}
           className={
             "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none"
           }

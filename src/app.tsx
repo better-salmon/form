@@ -8,6 +8,9 @@ import { WatcherAsyncDemo } from "@/demos/watcher-async-demo";
 import { ContactDemo } from "@/demos/contact-demo";
 import { cn } from "@/utils/cn";
 import { SignalFormDemo } from "@/demos/signal-form-demo";
+import { UnifiedSignalsDemo } from "@/demos/unified-signals-demo";
+import { SignalsWatcherCascadesDemo } from "@/demos/signal-watcher-cascades-demo";
+import { SignalsWatcherLoopBugDemo } from "@/demos/signal-watcher-loop-bug-demo";
 
 const DEMOS = [
   {
@@ -51,6 +54,24 @@ const DEMOS = [
     name: "Signal Form Demo",
     component: SignalFormDemo,
     description: "Simple form with name and email fields",
+  },
+  {
+    id: "unified-signals",
+    name: "Unified Signals Demo",
+    component: UnifiedSignalsDemo,
+    description: "Unified handler + async + triggers on signals store",
+  },
+  {
+    id: "signals-watcher-cascades",
+    name: "Watcher Cascades (Signals)",
+    component: SignalsWatcherCascadesDemo,
+    description: "Cascades using signals-based API",
+  },
+  {
+    id: "signals-watcher-loop-bug",
+    name: "Watcher Loop Bug (Signals)",
+    component: SignalsWatcherLoopBugDemo,
+    description: "Intentional feedback loop using signals + guards",
   },
 ] as const;
 
