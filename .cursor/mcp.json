@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "eslint": {
-      "command": "npx",
+      "command": "pnpm dlx",
       "args": ["@eslint/mcp@latest"],
       "env": {}
     },
@@ -9,7 +9,7 @@
       "url": "https://mcp.context7.com/mcp"
     },
     "playwright": {
-      "command": "npx",
+      "command": "pnpm dlx",
       "args": ["@playwright/mcp@latest"]
     }
   }

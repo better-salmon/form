@@ -11,6 +11,8 @@ import { SignalFormDemo } from "@/demos/signal-form-demo";
 import { UnifiedSignalsDemo } from "@/demos/unified-signals-demo";
 import { SignalsWatcherCascadesDemo } from "@/demos/signal-watcher-cascades-demo";
 import { SignalsWatcherLoopBugDemo } from "@/demos/signal-watcher-loop-bug-demo";
+import { SignalsLoopNoGuardsDemo } from "@/demos/signal-loop-no-guards-demo";
+import { SignalsFourCycleWorkingDemo } from "@/demos/signal-4cycle-working-demo";
 
 const DEMOS = [
   {
@@ -72,6 +74,18 @@ const DEMOS = [
     name: "Watcher Loop Bug (Signals)",
     component: SignalsWatcherLoopBugDemo,
     description: "Intentional feedback loop using signals + guards",
+  },
+  {
+    id: "signals-loop-no-guards",
+    name: "Signals Loop (No Guards)",
+    component: SignalsLoopNoGuardsDemo,
+    description: "Two-field self-propagating loop; should be contained",
+  },
+  {
+    id: "signals-4cycle",
+    name: "Signals 4-Field Cycle",
+    component: SignalsFourCycleWorkingDemo,
+    description: "Four-field cycle with low max steps to provoke bail",
   },
 ] as const;
 

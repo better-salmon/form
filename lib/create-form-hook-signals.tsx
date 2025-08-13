@@ -884,10 +884,17 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
           break;
         }
         const edge = makeEdgeKey(watched, target, action);
+        const isSelfEdge = target === watched;
         if (watcherTransaction.visited.has(edge)) {
           continue;
         }
-        if (watcherTransaction.steps >= watcherTransaction.maxSteps) {
+        // Do not let self-edges (watched === target) consume steps. They are
+        // typically no-ops in user handlers and counting them can cause
+        // premature bailouts in cyclic graphs.
+        if (
+          !isSelfEdge &&
+          watcherTransaction.steps >= watcherTransaction.maxSteps
+        ) {
           watcherTransaction.bailOut = true;
 
           console.warn(
@@ -903,7 +910,9 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
           break;
         }
         watcherTransaction.visited.add(edge);
-        watcherTransaction.steps += 1;
+        if (!isSelfEdge) {
+          watcherTransaction.steps += 1;
+        }
         runRespond(target, watched, action);
       }
     });
