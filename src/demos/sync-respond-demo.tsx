@@ -22,9 +22,9 @@ export default function FormDemo() {
     <Form className="mx-auto max-w-lg space-y-6">
       <div className="space-y-4 p-6">
         <div className="mb-6">
-          <h2 className="text-2xl font-bold">Signal Form Demo</h2>
+          <h2 className="text-2xl font-bold">Sync Respond Demo</h2>
           <p className="mt-2 text-sm text-gray-600">
-            Simple form with name and email fields
+            Simple form with password and confirm password fields
           </p>
         </div>
 

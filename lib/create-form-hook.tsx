@@ -1186,31 +1186,46 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     },
   } as const;
 
+  // -- Options helpers (extracted to reduce complexity)
+  function unregisterFieldOptions(name: keyof T) {
+    cleanupValidation(name);
+    clearPreviousReactionsFor(name);
+    targetToWatchKeys.delete(name);
+    fieldOptions.delete(name);
+  }
+
+  function settleIfAsyncDisabled<K extends keyof T>(
+    name: K,
+    internal: InternalFieldOptions<T, K, D>,
+  ) {
+    if (internal.respondAsync) {
+      return;
+    }
+    const currentState = getEntryOrThrow(name).validationState.getValue();
+    if (currentState.type !== "waiting" && currentState.type !== "checking") {
+      return;
+    }
+    cleanupValidation(name);
+    if (internal.respond) {
+      runRespond(name, name, "change");
+    } else {
+      setFieldState(name, validationHelper.idle());
+    }
+  }
+
   // -- Options registration lifecycle
   function setFieldOptions<K extends keyof T>(
     name: K,
     opts: FieldOptionsConfig<T, K, D> | undefined,
   ) {
     if (!opts) {
-      const prevKeys = targetToWatchKeys.get(name);
-      if (prevKeys) {
-        for (const k of prevKeys) {
-          const set = reactions.get(k);
-          if (set) {
-            set.delete(name);
-            if (set.size === 0) {
-              reactions.delete(k);
-            }
-          }
-        }
-        targetToWatchKeys.delete(name);
-      }
-      fieldOptions.delete(name);
+      unregisterFieldOptions(name);
       return;
     }
     const internal = normalizeFieldOptions(name, opts);
     fieldOptions.set(name, internal);
     registerReactionsFor(name, internal);
+    settleIfAsyncDisabled(name, internal);
   }
 
   function mount(name: keyof T) {

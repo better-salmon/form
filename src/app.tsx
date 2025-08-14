@@ -5,7 +5,7 @@ import { cn } from "@/utils/cn";
 const DEMOS = [
   {
     id: "form-demo",
-    name: "Signal Form Demo",
+    name: "Form Demo",
     component: lazy(() => import("@/demos/form-demo")),
     description: "Simple form with name and email fields",
   },
@@ -14,6 +14,12 @@ const DEMOS = [
     name: "Sync Respond Demo",
     component: lazy(() => import("@/demos/sync-respond-demo")),
     description: "Simple form with password and confirm password fields",
+  },
+  {
+    id: "async-sync-toggle-demo",
+    name: "Async → Sync Toggle",
+    component: lazy(() => import("@/demos/async-sync-toggle-demo")),
+    description: "Toggle a field from async (debounced) to sync while waiting",
   },
 ] as const;
 
