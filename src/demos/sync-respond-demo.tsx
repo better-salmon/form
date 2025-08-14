@@ -68,7 +68,7 @@ const confirmPasswordFieldOptions = defineFieldOptions({
     if (props.value.length < 4) {
       return props.helpers.validation.idle();
     }
-    if (props.value !== props.form.getField("password").value) {
+    if (props.value !== props.form.getFieldView("password").value) {
       return props.helpers.validation.invalid({
         issues: [{ message: "Passwords do not match" }],
       });

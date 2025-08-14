@@ -1,4 +1,4 @@
-import { createContext, use, useCallback, useState } from "react";
+import { createContext, use, useCallback, useMemo, useState } from "react";
 import { signal, useSignal, type Signal } from "@lib/signals/signals";
 import { deepEqual } from "@lib/deep-equal";
 import { normalizeDebounceMs, normalizeNumber } from "@lib/normalize-number";
@@ -222,12 +222,12 @@ type InternalValidationHelper<D = unknown> = {
 // =====================================
 
 type FormApi<T extends DefaultValues, D = unknown> = {
-  getField: <K extends keyof T>(name: K) => FieldView<T[K], D>;
+  getFieldView: <K extends keyof T>(name: K) => FieldView<T[K], D>;
 };
 
 type FormStore<T extends DefaultValues, D = unknown> = {
   formApi: FormApi<T, D>;
-  getField: <K extends keyof T>(name: K) => FieldEntry<T[K], D>;
+  getFieldEntry: <K extends keyof T>(name: K) => FieldEntry<T[K], D>;
   mount: (name: keyof T) => void;
   registerOptions: <K extends keyof T>(
     name: K,
@@ -246,7 +246,6 @@ type FormStore<T extends DefaultValues, D = unknown> = {
   ) => void;
   dispatchBlur: (name: keyof T) => void;
   submit: (fields?: readonly (keyof T)[]) => void;
-  revalidate: (name: keyof T, action?: Action) => void;
   reset: (
     name: keyof T,
     options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
@@ -344,8 +343,7 @@ export type RespondContext<
     ) => void;
     touch: (name: keyof T) => void;
     submit: (fields?: readonly (keyof T)[]) => void;
-    revalidate: (name: keyof T, action?: Action) => void;
-    getField: <F extends keyof T>(name: F) => FieldView<T[F], D>;
+    getFieldView: <F extends keyof T>(name: F) => FieldView<T[F], D>;
   };
   helpers: {
     validation: ValidationHelperAsync<D>;
@@ -383,8 +381,7 @@ export type RespondContextSync<
     ) => void;
     touch: (name: keyof T) => void;
     submit: (fields?: readonly (keyof T)[]) => void;
-    revalidate: (name: keyof T, action?: Action) => void;
-    getField: <F extends keyof T>(name: F) => FieldView<T[F], D>;
+    getFieldView: <F extends keyof T>(name: F) => FieldView<T[F], D>;
   };
   helpers: {
     validation: ValidationHelperSync<D>;
@@ -430,8 +427,7 @@ type RespondAsyncContext<
     ) => void;
     touch: (name: keyof T) => void;
     submit: (fields?: readonly (keyof T)[]) => void;
-    revalidate: (name: keyof T, action?: Action) => void;
-    getField: <F extends keyof T>(name: F) => FieldView<T[F], D>;
+    getFieldView: <F extends keyof T>(name: F) => FieldView<T[F], D>;
   };
 };
 
@@ -514,33 +510,6 @@ export type UseFieldOptions<
     | NoValidationFieldOptionsExtension
   )
 >;
-
-// =====================================
-// Field View helpers
-// =====================================
-
-function buildFieldView<T extends DefaultValues, D, F extends keyof T>(
-  fieldsMap: FieldMap<T, D>,
-  mountedFields: Set<keyof T>,
-  fieldName: F,
-): FieldView<T[F], D> {
-  const field = fieldsMap.get(fieldName);
-
-  invariant(field, `Unknown field: ${String(fieldName)}`);
-
-  const typed = field as unknown as FieldEntry<T[F], D>;
-
-  return {
-    value: typed.value.getValue(),
-    meta: {
-      isTouched: typed.meta.isTouched.getValue(),
-      numberOfChanges: typed.meta.numberOfChanges.getValue(),
-      numberOfSubmissions: typed.meta.numberOfSubmissions.getValue(),
-    },
-    validationState: typed.validationState.getValue(),
-    isMounted: mountedFields.has(fieldName),
-  } satisfies FieldView<T[F], D>;
-}
 
 // =====================================
 // Async Flow Helpers
@@ -788,7 +757,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   };
 
   // -- Internal getters/setters
-  function getEntryOrThrow<K extends keyof T>(name: K): FieldEntry<T[K], D> {
+  function getFieldEntry<K extends keyof T>(name: K): FieldEntry<T[K], D> {
     const entry = fieldsMap.get(name);
 
     invariant(entry, `Unknown field: ${String(name)}`);
@@ -849,7 +818,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   function setFieldState(field: keyof T, state: FieldState<D>) {
-    getEntryOrThrow(field).validationState.setValue(state, deepEqual);
+    getFieldEntry(field).validationState.setValue(state, deepEqual);
   }
 
   function setLastValidatedValue<K extends keyof T>(field: K, value: T[K]) {
@@ -916,10 +885,10 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     setLastValidatedValue(field, value);
     lastValidatedChanges.set(
       field,
-      getEntryOrThrow(field).meta.numberOfChanges.getValue(),
+      getFieldEntry(field).meta.numberOfChanges.getValue(),
     );
 
-    const currentFieldView = buildFieldView(fieldsMap, mountedFields, field);
+    const currentFieldView = getFieldView(field);
     const std = opts.standardSchema;
 
     opts
@@ -937,13 +906,11 @@ function createFormStore<T extends DefaultValues, D = unknown>(
             std ? await standardValidateAsync(std, value) : undefined,
         },
         form: {
-          setValue: api.setValue,
-          reset: api.reset,
-          touch: api.touch,
-          submit: api.submit,
-          revalidate: api.revalidate,
-          getField: (fieldName) =>
-            buildFieldView(fieldsMap, mountedFields, fieldName),
+          setValue,
+          reset,
+          touch,
+          submit,
+          getFieldView,
         },
       })
       .then((result) => {
@@ -998,15 +965,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         if (
           shouldSkipAutoValidation(
             getRunningValidation(field),
-            getEntryOrThrow(field).value.getValue(),
+            getFieldEntry(field).value.getValue(),
             getLastValidatedValue(field),
             lastValidatedChanges.get(field) ?? 0,
-            getEntryOrThrow(field).meta.numberOfChanges.getValue(),
+            getFieldEntry(field).meta.numberOfChanges.getValue(),
           )
         ) {
           return;
         }
-        const value = getEntryOrThrow(field).value.getValue();
+        const value = getFieldEntry(field).value.getValue();
         const debounceMs = normalizeDebounceMs(
           flow.debounceMs ?? opts.debounceMs ?? defaultDebounceMs,
         );
@@ -1014,7 +981,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         return;
       }
       case "force": {
-        const value = getEntryOrThrow(field).value.getValue();
+        const value = getFieldEntry(field).value.getValue();
         const debounceMs = normalizeDebounceMs(
           flow.debounceMs ?? opts.debounceMs ?? defaultDebounceMs,
         );
@@ -1054,8 +1021,8 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       return;
     }
 
-    const value = getEntryOrThrow(target).value.getValue();
-    const currentView = buildFieldView(fieldsMap, mountedFields, target);
+    const value = getFieldEntry(target).value.getValue();
+    const currentView = getFieldView(target);
     const std = opts.standardSchema;
 
     const result = opts.respond?.({
@@ -1064,13 +1031,11 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       value: value,
       current: currentView,
       form: {
-        setValue: api.setValue,
-        reset: api.reset,
-        touch: api.touch,
-        submit: api.submit,
-        revalidate: api.revalidate,
-        getField: (fieldName) =>
-          buildFieldView(fieldsMap, mountedFields, fieldName),
+        setValue,
+        reset,
+        touch,
+        submit,
+        getFieldView,
       },
       helpers: {
         validation: opts.respondAsync
@@ -1189,92 +1154,86 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     targetToWatchKeys.set(name, keysForTarget);
   }
 
-  // -- Public API (mutations)
-  const api = {
-    setValue: <K extends keyof T>(
-      name: K,
-      value: T[K],
-      options?: {
-        markTouched?: boolean;
-        incrementChanges?: boolean;
-        dispatch?: boolean;
-      },
-    ) => {
-      const markTouched = options?.markTouched ?? true;
-      const incrementChanges = options?.incrementChanges ?? true;
-      const shouldDispatch = options?.dispatch ?? true;
-
-      const entry = getEntryOrThrow(name);
-      const previousValue = entry.value.getValue();
-      const hasChanged = !deepEqual(previousValue, value);
-      if (hasChanged) {
-        entry.value.setValue(value, deepEqual);
-      }
-
-      if (markTouched) {
-        entry.meta.isTouched.setValue(true);
-      }
-
-      if (incrementChanges && hasChanged) {
-        entry.meta.numberOfChanges.setValue(
-          entry.meta.numberOfChanges.getValue() + 1,
-        );
-      }
-
-      if (shouldDispatch && hasChanged) {
-        dispatch(name, "change");
-      }
+  function setValue<K extends keyof T>(
+    name: K,
+    value: T[K],
+    options?: {
+      markTouched?: boolean;
+      incrementChanges?: boolean;
+      dispatch?: boolean;
     },
-    reset: (
-      name: keyof T,
-      options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
-    ) => {
-      // Reset value to default without touching meta/counters by default
-      api.setValue(name, defaultValues[name], {
-        markTouched: false,
-        incrementChanges: false,
-        dispatch: options?.dispatch,
-      });
+  ) {
+    const markTouched = options?.markTouched ?? true;
+    const incrementChanges = options?.incrementChanges ?? true;
+    const shouldDispatch = options?.dispatch ?? true;
 
-      if (options?.meta) {
-        const entry = getEntryOrThrow(name);
-        entry.meta.isTouched.setValue(false);
-        entry.meta.numberOfChanges.setValue(0);
-        entry.meta.numberOfSubmissions.setValue(0);
-      }
+    const entry = getFieldEntry(name);
+    const previousValue = entry.value.getValue();
+    const hasChanged = !deepEqual(previousValue, value);
+    if (hasChanged) {
+      entry.value.setValue(value, deepEqual);
+    }
 
-      if (options?.validation) {
-        setFieldState(name, validationHelperSync.idle());
-        cleanupValidation(name);
-      }
-    },
-    touch: (name: keyof T) => {
-      getEntryOrThrow(name).meta.isTouched.setValue(true);
-    },
-    submit: (fields?: readonly (keyof T)[]) => {
-      const toSubmit = new Set(
-        fields ?? (Object.keys(defaultValues) as (keyof T)[]),
+    if (markTouched) {
+      entry.meta.isTouched.setValue(true);
+    }
+
+    if (incrementChanges && hasChanged) {
+      entry.meta.numberOfChanges.setValue(
+        entry.meta.numberOfChanges.getValue() + 1,
       );
-      runInDispatchTransaction(() => {
-        for (const f of toSubmit) {
-          if (!mountedFields.has(f)) {
-            continue;
-          }
-          const entry = getEntryOrThrow(f);
-          entry.meta.numberOfSubmissions.setValue(
-            entry.meta.numberOfSubmissions.getValue() + 1,
-          );
-          dispatch(f, "submit");
-          if (watcherTransaction.bailOut) {
-            break;
-          }
+    }
+
+    if (shouldDispatch && hasChanged) {
+      dispatch(name, "change");
+    }
+  }
+  function reset(
+    name: keyof T,
+    options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
+  ) {
+    // Reset value to default without touching meta/counters by default
+    setValue(name, defaultValues[name], {
+      markTouched: false,
+      incrementChanges: false,
+      dispatch: options?.dispatch,
+    });
+
+    if (options?.meta) {
+      const entry = getFieldEntry(name);
+      entry.meta.isTouched.setValue(false);
+      entry.meta.numberOfChanges.setValue(0);
+      entry.meta.numberOfSubmissions.setValue(0);
+    }
+
+    if (options?.validation) {
+      setFieldState(name, validationHelperSync.idle());
+      cleanupValidation(name);
+    }
+  }
+  function touch(name: keyof T) {
+    getFieldEntry(name).meta.isTouched.setValue(true);
+  }
+  function submit(fields?: readonly (keyof T)[]) {
+    const toSubmit = new Set(
+      fields ?? (Object.keys(defaultValues) as (keyof T)[]),
+    );
+    runInDispatchTransaction(() => {
+      for (const f of toSubmit) {
+        if (!mountedFields.has(f)) {
+          continue;
         }
-      });
-    },
-    revalidate: (name: keyof T, action?: Action) => {
-      dispatch(name, action ?? "change");
-    },
-  } as const;
+        const entry = getFieldEntry(f);
+        entry.meta.numberOfSubmissions.setValue(
+          entry.meta.numberOfSubmissions.getValue() + 1,
+        );
+        dispatch(f, "submit");
+        if (watcherTransaction.bailOut) {
+          break;
+        }
+      }
+    });
+  }
 
   // -- Options helpers (extracted to reduce complexity)
   function unregisterFieldOptions(name: keyof T) {
@@ -1291,7 +1250,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     if (internal.respondAsync) {
       return;
     }
-    const currentState = getEntryOrThrow(name).validationState.getValue();
+    const currentState = getFieldEntry(name).validationState.getValue();
     if (currentState.type !== "waiting" && currentState.type !== "checking") {
       return;
     }
@@ -1348,7 +1307,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   function getFieldView<K extends keyof T>(name: K): FieldView<T[K], D> {
-    const field = getEntryOrThrow(name);
+    const field = getFieldEntry(name);
     return {
       value: field.value.getValue(),
       meta: {
@@ -1363,20 +1322,17 @@ function createFormStore<T extends DefaultValues, D = unknown>(
 
   const store: FormStore<T, D> = {
     formApi: {
-      getField: getFieldView,
+      getFieldView,
     },
     dispatchBlur,
     registerOptions,
     unregisterOptions,
-    getField: getEntryOrThrow,
+    getFieldEntry,
     mount,
     unmount,
-    setValue: api.setValue,
-    reset: api.reset,
-    submit: api.submit,
-    revalidate: (name, action = "change") => {
-      dispatch(name, action);
-    },
+    setValue,
+    reset,
+    submit,
   };
 
   return store;
@@ -1403,9 +1359,7 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
 ): Prettify<UseFieldResult<T, K, D>> {
   const store = use(StoreContext) as FormStore<T, D> | null;
 
-  if (!store) {
-    throw new Error("useField must be used within a FormProvider");
-  }
+  invariant(store, "useField must be used within a FormProvider");
 
   const { name, debounceMs, on, respond, respondAsync, standardSchema } =
     options;
@@ -1433,7 +1387,7 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     };
   }, [name, store]);
 
-  const field = store.getField(name);
+  const field = store.getFieldEntry(name);
 
   const value = useSignal(field.value);
   const isTouched = useSignal(field.meta.isTouched);
@@ -1452,6 +1406,8 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     store.dispatchBlur(name);
   }, [name, store]);
 
+  const formApi = useMemo(() => store.formApi, [store]);
+
   return {
     name,
     value,
@@ -1463,7 +1419,7 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     validationState,
     handleChange,
     handleBlur,
-    formApi: store.formApi,
+    formApi,
   };
 }
 
@@ -1481,8 +1437,10 @@ export function useForm<T extends DefaultValues, D = unknown>(
     [formStore],
   );
 
+  const formApi = useMemo(() => formStore.formApi, [formStore]);
+
   return {
-    formApi: formStore.formApi,
+    formApi,
     Form,
   };
 }
