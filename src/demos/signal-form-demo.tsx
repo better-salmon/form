@@ -1,4 +1,4 @@
-import { createSignalFormHook } from "@lib/create-form-hook-signals";
+import { createSignalFormHook } from "@lib/create-form-hook";
 import type { Branded } from "@/types/types";
 
 type Name = Branded<string, "name">;

@@ -1,11 +1,5 @@
 import "@/index.css";
 import { useEffect, useState } from "react";
-import { WatcherDemo } from "@/demos/watcher-demo";
-import { WatcherLoopBugDemo } from "@/demos/watcher-loop-bug-demo";
-import { WatcherCascadesDemo } from "@/demos/watcher-cascades-demo";
-import { PasswordDemo } from "@/demos/password-demo";
-import { WatcherAsyncDemo } from "@/demos/watcher-async-demo";
-import { ContactDemo } from "@/demos/contact-demo";
 import { cn } from "@/utils/cn";
 import { SignalFormDemo } from "@/demos/signal-form-demo";
 import { UnifiedSignalsDemo } from "@/demos/unified-signals-demo";
@@ -15,42 +9,6 @@ import { SignalsLoopNoGuardsDemo } from "@/demos/signal-loop-no-guards-demo";
 import { SignalsFourCycleWorkingDemo } from "@/demos/signal-4cycle-working-demo";
 
 const DEMOS = [
-  {
-    id: "contact",
-    name: "Contact Demo",
-    component: ContactDemo,
-    description: "Simple name, email, and phone form",
-  },
-  {
-    id: "watcher",
-    name: "Watcher Demo",
-    component: WatcherDemo,
-    description: "Field dependencies and watchers",
-  },
-  {
-    id: "watcher-loop-bug",
-    name: "Watcher Loop Bug",
-    component: WatcherLoopBugDemo,
-    description: "Intentional feedback loop with guards and logging",
-  },
-  {
-    id: "watcher-cascades",
-    name: "Watcher Cascades",
-    component: WatcherCascadesDemo,
-    description: "Legit cascades: chain and diamond propagation",
-  },
-  {
-    id: "watcher-async",
-    name: "Watcher Async",
-    component: WatcherAsyncDemo,
-    description: "Watcher schedules async work and cancels stale runs",
-  },
-  {
-    id: "password",
-    name: "Password Demo",
-    component: PasswordDemo,
-    description: "Password validation and confirmation",
-  },
   {
     id: "signal-form",
     name: "Signal Form Demo",
@@ -104,7 +62,7 @@ function getUrlParams() {
 function updateUrlParams(demo: DemoNames, sidebarCollapsed: SidebarState) {
   const searchParams = new URLSearchParams();
 
-  if (demo !== "contact") {
+  if (demo !== "signal-form") {
     searchParams.set("demo", demo);
   }
 
@@ -133,7 +91,7 @@ function App() {
   }, [activeDemo, sidebarState]);
 
   const ActiveComponent =
-    DEMOS.find((demo) => demo.id === activeDemo)?.component ?? ContactDemo;
+    DEMOS.find((demo) => demo.id === activeDemo)?.component ?? SignalFormDemo;
 
   const activeDemoInfo = DEMOS.find((demo) => demo.id === activeDemo);
 

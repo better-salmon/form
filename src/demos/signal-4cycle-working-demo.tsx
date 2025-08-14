@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createSignalFormHook } from "@lib/create-form-hook-signals";
+import { createSignalFormHook } from "@lib/create-form-hook";
 import { cn } from "@/utils/cn";
 
 type Form = { a: string; b: string; c: string; d: string };

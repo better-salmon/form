@@ -19,6 +19,7 @@ export default defineConfig({
   // @ts-expect-error
   plugins: [react()],
   test: {
+    include: ["lib/**/*.test.ts", "lib/**/*.test.tsx"],
     setupFiles: [path.resolve(__dirname, "./test/setup.browser.ts")],
     browser: {
       enabled: false,

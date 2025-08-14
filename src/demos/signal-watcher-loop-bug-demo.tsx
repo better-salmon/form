@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { createSignalFormHook } from "@lib/create-form-hook-signals";
+import { createSignalFormHook } from "@lib/create-form-hook";
 import { cn } from "@/utils/cn";
 import type { Branded } from "@/types/types";
 

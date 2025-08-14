@@ -6,7 +6,8 @@
       "env": {}
     },
     "context7": {
-      "url": "https://mcp.context7.com/mcp"
+      "command": "pnpm dlx",
+      "args": ["@upstash/context7-mcp@latest"]
     },
     "playwright": {
       "command": "pnpm dlx",

@@ -1,7 +1,7 @@
 import {
   createSignalFormHook,
   type FieldState,
-} from "@lib/create-form-hook-signals";
+} from "@lib/create-form-hook";
 import type React from "react";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
