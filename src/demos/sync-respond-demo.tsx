@@ -8,7 +8,8 @@ type PasswordForm = {
   confirmPassword: Password;
 };
 
-const { useField, useForm } = createFormHook<PasswordForm>();
+const { useField, useForm, defineFieldOptions } =
+  createFormHook<PasswordForm>();
 
 export default function FormDemo() {
   const { Form } = useForm({
@@ -46,19 +47,38 @@ export default function FormDemo() {
   );
 }
 
+const passwordFieldOptions = defineFieldOptions({
+  name: "password",
+  respond: (props) => {
+    console.log(props);
+    if (props.value.length < 4) {
+      return props.helpers.validation.invalid({
+        issues: [{ message: "Password must be at least 4 characters long" }],
+      });
+    }
+    return props.helpers.validation.valid();
+  },
+});
+
+const confirmPasswordFieldOptions = defineFieldOptions({
+  name: "confirmPassword",
+  on: { from: { password: ["change"] } },
+  respond: (props) => {
+    console.log(props);
+    if (props.value.length < 4) {
+      return props.helpers.validation.idle();
+    }
+    if (props.value !== props.form.getField("password").value) {
+      return props.helpers.validation.invalid({
+        issues: [{ message: "Passwords do not match" }],
+      });
+    }
+    return props.helpers.validation.valid();
+  },
+});
+
 function PasswordField() {
-  const field = useField({
-    name: "password",
-    respond: (props) => {
-      console.log(props);
-      if (props.value.length < 4) {
-        return props.helpers.validation.invalid({
-          issues: [{ message: "Password must be at least 4 characters long" }],
-        });
-      }
-      return props.helpers.validation.valid();
-    },
-  });
+  const field = useField(passwordFieldOptions);
 
   return (
     <label className="flex flex-col gap-2">
@@ -89,22 +109,7 @@ function PasswordField() {
 }
 
 function ConfirmPasswordField() {
-  const field = useField({
-    name: "confirmPassword",
-    on: { from: { password: ["change"] } },
-    respond: (props) => {
-      console.log(props);
-      if (props.value.length < 4) {
-        return props.helpers.validation.idle();
-      }
-      if (props.value !== props.form.getField("password").value) {
-        return props.helpers.validation.invalid({
-          issues: [{ message: "Passwords do not match" }],
-        });
-      }
-      return props.helpers.validation.valid();
-    },
-  });
+  const field = useField(confirmPasswordFieldOptions);
 
   return (
     <label className="flex flex-col gap-2">

@@ -9,7 +9,7 @@ type NameForm = {
   email: Email;
 };
 
-const { useField, useForm } = createFormHook<NameForm>();
+const { useField, useForm, defineFieldOptions } = createFormHook<NameForm>();
 
 export default function FormDemo() {
   const { Form } = useForm({
@@ -47,13 +47,22 @@ export default function FormDemo() {
   );
 }
 
+const nameFieldOptions = defineFieldOptions({
+  name: "name",
+  respond: (props) => {
+    console.log(props);
+  },
+});
+
+const emailFieldOptions = defineFieldOptions({
+  name: "email",
+  respond: (props) => {
+    console.log(props);
+  },
+});
+
 function NameField() {
-  const field = useField({
-    name: "name",
-    respond: (props) => {
-      console.log(props);
-    },
-  });
+  const field = useField(nameFieldOptions);
 
   return (
     <label className="flex flex-col gap-2">
@@ -78,12 +87,7 @@ function NameField() {
 }
 
 function EmailField() {
-  const field = useField({
-    name: "email",
-    respond: (props) => {
-      console.log(props);
-    },
-  });
+  const field = useField(emailFieldOptions);
 
   return (
     <label className="flex flex-col gap-2">

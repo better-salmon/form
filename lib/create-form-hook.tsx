@@ -129,7 +129,8 @@ export type FieldView<T, D = unknown> = {
   isMounted: boolean;
 };
 
-export type ValidationHelper<D = unknown> = {
+// A sync-only variant that intentionally hides async flow helpers
+type ValidationHelperSync<D = unknown> = {
   valid(p?: { details?: D }): FieldStateValid<D>;
   invalid(p?: {
     issues?: readonly StandardSchemaV1.Issue[];
@@ -140,12 +141,17 @@ export type ValidationHelper<D = unknown> = {
     details?: D;
   }): FieldStateWarning<D>;
   idle(p?: { details?: D }): FieldStateIdle<D>;
-  async: {
-    skip(): ValidationFlowSkip;
-    auto(debounceMs?: number): ValidationFlowAuto;
-    force(debounceMs?: number): ValidationFlowForce;
-  };
 };
+
+export type ValidationHelperAsync<D = unknown> = Prettify<
+  {
+    async: {
+      skip(): ValidationFlowSkip;
+      auto(debounceMs?: number): ValidationFlowAuto;
+      force(debounceMs?: number): ValidationFlowForce;
+    };
+  } & ValidationHelperSync<D>
+>;
 
 type AsyncValidationHelper<D = unknown> = {
   valid(p?: { details?: D }): FieldStateValid<D>;
@@ -190,20 +196,12 @@ type RunningValidation<T> = {
   validationId: number;
 };
 
-type FieldOptionsConfig<T extends DefaultValues, K extends keyof T, D> = {
-  standardSchema?: StandardSchemaV1<T[K]>;
-  debounceMs?: number;
-  respond?: UseFieldOptions<T, K, D>["respond"];
-  respondAsync?: UseFieldOptionsAsync<T, K, D>["respondAsync"];
-  on?: UseFieldOptions<T, K, D>["on"];
-};
-
 type InternalFieldOptions<T extends DefaultValues, K extends keyof T, D> = {
   name: K;
   standardSchema?: StandardSchemaV1<T[K]>;
   debounceMs?: number;
   respond?: (
-    ctx: RespondContext<T, K, D>,
+    ctx: RespondContext<T, K, D> | RespondContextSync<T, K, D>,
   ) => FinalFieldState<D> | ValidationFlow | void;
   respondAsync?: (
     ctx: RespondAsyncContext<T, K, D>,
@@ -223,12 +221,17 @@ type InternalValidationHelper<D = unknown> = {
 // Store and Hook Types
 // =====================================
 
+type FormApi<T extends DefaultValues, D = unknown> = {
+  getField: <K extends keyof T>(name: K) => FieldView<T[K], D>;
+};
+
 type FormStore<T extends DefaultValues, D = unknown> = {
+  formApi: FormApi<T, D>;
   getField: <K extends keyof T>(name: K) => FieldEntry<T[K], D>;
   mount: (name: keyof T) => void;
   registerOptions: <K extends keyof T>(
     name: K,
-    options: FieldOptionsConfig<T, K, D>,
+    options: UseFieldOptions<T, K, D>,
   ) => void;
   unregisterOptions: (name: keyof T) => void;
   unmount: (name: keyof T) => void;
@@ -257,10 +260,11 @@ type UseFieldResult<T extends DefaultValues, K extends keyof T, D = unknown> = {
   validationState: FieldState<D>;
   handleChange: (value: T[K]) => void;
   handleBlur: () => void;
+  formApi: FormApi<T, D>;
 };
 
 export type UseFormResult<T extends DefaultValues, D = unknown> = {
-  formStore: FormStore<T, D>;
+  formApi: FormApi<T, D>;
   Form: (props: React.ComponentProps<"form">) => React.ReactElement;
 };
 
@@ -275,6 +279,9 @@ type CreateFormHookResult<T extends DefaultValues, D = unknown> = {
   useField: <K extends keyof T>(
     options: UseFieldOptions<T, K, D>,
   ) => Prettify<UseFieldResult<T, K, D>>;
+  defineFieldOptions: <K extends keyof T>(
+    options: UseFieldOptions<T, K, D>,
+  ) => UseFieldOptions<T, K, D>;
 };
 
 // =====================================
@@ -341,7 +348,46 @@ export type RespondContext<
     getField: <F extends keyof T>(name: F) => FieldView<T[F], D>;
   };
   helpers: {
-    validation: ValidationHelper<D>;
+    validation: ValidationHelperAsync<D>;
+    validateWithStandardSchema: () =>
+      | readonly StandardSchemaV1.Issue[]
+      | undefined;
+  };
+};
+
+// Sync variant: identical to RespondContext but without async helpers on validation
+export type RespondContextSync<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+> = {
+  action: Action;
+  cause:
+    | { isSelf: true; field: K; action: Action }
+    | { isSelf: false; field: Exclude<keyof T, K>; action: Action };
+  value: T[K];
+  current: Prettify<FieldView<T[K], D>>;
+  form: {
+    setValue: <F extends keyof T>(
+      name: F,
+      value: T[F],
+      options?: {
+        markTouched?: boolean;
+        incrementChanges?: boolean;
+        dispatch?: boolean;
+      },
+    ) => void;
+    reset: (
+      name: keyof T,
+      options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
+    ) => void;
+    touch: (name: keyof T) => void;
+    submit: (fields?: readonly (keyof T)[]) => void;
+    revalidate: (name: keyof T, action?: Action) => void;
+    getField: <F extends keyof T>(name: F) => FieldView<T[F], D>;
+  };
+  helpers: {
+    validation: ValidationHelperSync<D>;
     validateWithStandardSchema: () =>
       | readonly StandardSchemaV1.Issue[]
       | undefined;
@@ -393,48 +439,81 @@ type RespondAsyncContext<
 // Public Options (sync/async) for useField
 // =====================================
 
-export type UseFieldOptionsSync<
+type SyncOnlyFieldOptionsExtension<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
 > = {
-  name: K;
   standardSchema?: StandardSchemaV1<T[K]>;
-  debounceMs?: never;
-  respond: (ctx: RespondContext<T, K, D>) => FinalFieldState<D> | void;
   on?: {
     self?: Action[];
     from?: Partial<Record<Exclude<keyof T, K>, Action[] | true>>;
   };
-  // Explicitly disallow async flow in the sync variant
+  respond: (
+    ctx: Prettify<RespondContextSync<T, K, D>>,
+  ) => FinalFieldState<D> | void;
   respondAsync?: never;
+  debounceMs?: never;
 };
 
-export type UseFieldOptionsAsync<
+type AsyncOnlyFieldOptionsExtension<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
 > = {
-  name: K;
   standardSchema?: StandardSchemaV1<T[K]>;
-  debounceMs?: number;
-  respond?: (
-    ctx: RespondContext<T, K, D>,
-  ) => FinalFieldState<D> | ValidationFlow | void;
-  respondAsync: (
-    ctx: RespondAsyncContext<T, K, D>,
-  ) => Promise<FinalFieldState<D>>;
   on?: {
     self?: Action[];
     from?: Partial<Record<Exclude<keyof T, K>, Action[] | true>>;
   };
+  respond?: never;
+  respondAsync: (
+    ctx: Prettify<RespondAsyncContext<T, K, D>>,
+  ) => Promise<FinalFieldState<D>>;
+  debounceMs?: number;
+};
+
+type SyncAsyncFieldOptionsExtension<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+> = {
+  standardSchema?: StandardSchemaV1<T[K]>;
+  on?: {
+    self?: Action[];
+    from?: Partial<Record<Exclude<keyof T, K>, Action[] | true>>;
+  };
+  respond: (
+    ctx: Prettify<RespondContext<T, K, D>>,
+  ) => FinalFieldState<D> | ValidationFlow | void;
+  respondAsync: (
+    ctx: Prettify<RespondAsyncContext<T, K, D>>,
+  ) => Promise<FinalFieldState<D>>;
+  debounceMs?: number;
+};
+
+type NoValidationFieldOptionsExtension = {
+  standardSchema?: never;
+  on?: never;
+  respond?: never;
+  respondAsync?: never;
+  debounceMs?: never;
 };
 
 export type UseFieldOptions<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
-> = UseFieldOptionsSync<T, K, D> | UseFieldOptionsAsync<T, K, D>;
+> = Prettify<
+  {
+    name: K;
+  } & (
+    | SyncOnlyFieldOptionsExtension<T, K, D>
+    | AsyncOnlyFieldOptionsExtension<T, K, D>
+    | SyncAsyncFieldOptionsExtension<T, K, D>
+    | NoValidationFieldOptionsExtension
+  )
+>;
 
 // =====================================
 // Field View helpers
@@ -447,9 +526,7 @@ function buildFieldView<T extends DefaultValues, D, F extends keyof T>(
 ): FieldView<T[F], D> {
   const field = fieldsMap.get(fieldName);
 
-  if (!field) {
-    throw new Error(`Unknown field: ${String(fieldName)}`);
-  }
+  invariant(field, `Unknown field: ${String(fieldName)}`);
 
   const typed = field as unknown as FieldEntry<T[F], D>;
 
@@ -509,7 +586,7 @@ function force(debounceMs?: number): ValidationFlowForce {
 
 function normalizeFieldOptions<T extends DefaultValues, K extends keyof T, D>(
   name: K,
-  opts: FieldOptionsConfig<T, K, D>,
+  opts: UseFieldOptions<T, K, D>,
 ): InternalFieldOptions<T, K, D> {
   const triggersSelf = new Set<Action>(opts.on?.self ?? ACTIONS);
   const from = new Map<Exclude<keyof T, K>, Set<Action>>();
@@ -526,8 +603,12 @@ function normalizeFieldOptions<T extends DefaultValues, K extends keyof T, D>(
     name: name,
     standardSchema: opts.standardSchema,
     debounceMs: opts.debounceMs,
-    respond: opts.respond,
-    respondAsync: opts.respondAsync,
+    respond: opts.respond as (
+      ctx: RespondContext<T, K, D> | RespondContextSync<T, K, D>,
+    ) => FinalFieldState<D> | ValidationFlow | void,
+    respondAsync: opts.respondAsync as (
+      ctx: RespondAsyncContext<T, K, D>,
+    ) => Promise<FinalFieldState<D>>,
     triggers: { self: triggersSelf, from },
   } satisfies InternalFieldOptions<T, K, D>;
 }
@@ -614,13 +695,20 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   // -- Helper bundles exposed to user callbacks
-  const validationHelper = {
+  const validationHelperAsync = {
     idle,
     invalid,
     valid,
     warning,
     async: { auto, force, skip },
-  } satisfies ValidationHelper<D>;
+  } satisfies ValidationHelperAsync<D>;
+
+  const validationHelperSync = {
+    idle,
+    invalid,
+    valid,
+    warning,
+  } satisfies ValidationHelperSync<D>;
 
   const internalValidationHelper = {
     checking,
@@ -650,7 +738,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         numberOfChanges: signal(0),
         numberOfSubmissions: signal(0),
       },
-      validationState: signal<FieldState<D>>(validationHelper.idle()),
+      validationState: signal<FieldState<D>>(validationHelperSync.idle()),
     });
   }
 
@@ -877,7 +965,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         }
         setFieldState(
           field,
-          validationHelper.invalid({
+          validationHelperSync.invalid({
             issues: [
               {
                 message:
@@ -959,7 +1047,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       // No sync respond provided, but async path configured: force async
       handleAsyncFlow(
         target,
-        validationHelper.async.force(),
+        validationHelperAsync.async.force(),
         action,
         causeForTarget,
       );
@@ -985,13 +1073,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           buildFieldView(fieldsMap, mountedFields, fieldName),
       },
       helpers: {
-        validation: validationHelper,
+        validation: opts.respondAsync
+          ? validationHelperAsync
+          : validationHelperSync,
         validateWithStandardSchema: () =>
           std ? standardValidate(std, value) : undefined,
       },
     });
 
-    const outcome = result ?? validationHelper.async.skip();
+    const outcome = result ?? validationHelperAsync.async.skip();
 
     if (outcome.type === "async") {
       handleAsyncFlow(target, outcome, action, causeForTarget);
@@ -1154,7 +1244,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       }
 
       if (options?.validation) {
-        setFieldState(name, validationHelper.idle());
+        setFieldState(name, validationHelperSync.idle());
         cleanupValidation(name);
       }
     },
@@ -1209,14 +1299,14 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     if (internal.respond) {
       runRespond(name, name, "change");
     } else {
-      setFieldState(name, validationHelper.idle());
+      setFieldState(name, validationHelperSync.idle());
     }
   }
 
   // -- Options registration lifecycle
   function setFieldOptions<K extends keyof T>(
     name: K,
-    opts: FieldOptionsConfig<T, K, D> | undefined,
+    opts: UseFieldOptions<T, K, D> | undefined,
   ) {
     if (!opts) {
       unregisterFieldOptions(name);
@@ -1248,7 +1338,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
 
   function registerOptions<K extends keyof T>(
     name: K,
-    options: FieldOptionsConfig<T, K, D>,
+    options: UseFieldOptions<T, K, D>,
   ) {
     setFieldOptions(name, options);
   }
@@ -1257,7 +1347,24 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     setFieldOptions(name, undefined);
   }
 
+  function getFieldView<K extends keyof T>(name: K): FieldView<T[K], D> {
+    const field = getEntryOrThrow(name);
+    return {
+      value: field.value.getValue(),
+      meta: {
+        isTouched: field.meta.isTouched.getValue(),
+        numberOfChanges: field.meta.numberOfChanges.getValue(),
+        numberOfSubmissions: field.meta.numberOfSubmissions.getValue(),
+      },
+      validationState: field.validationState.getValue(),
+      isMounted: mountedFields.has(name),
+    };
+  }
+
   const store: FormStore<T, D> = {
+    formApi: {
+      getField: getFieldView,
+    },
     dispatchBlur,
     registerOptions,
     unregisterOptions,
@@ -1273,6 +1380,18 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   };
 
   return store;
+}
+
+// =====================================
+// Hooks helpers
+// =====================================
+
+function defineFieldOptions<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+>(options: UseFieldOptions<T, K, D>): UseFieldOptions<T, K, D> {
+  return options;
 }
 
 // =====================================
@@ -1293,12 +1412,13 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
 
   useIsomorphicEffect(() => {
     store.registerOptions(name, {
-      respond,
+      name,
       debounceMs,
-      on,
       respondAsync,
+      on,
+      respond,
       standardSchema,
-    });
+    } as UseFieldOptions<T, K, D>);
 
     return () => {
       store.unregisterOptions(name);
@@ -1343,6 +1463,7 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     validationState,
     handleChange,
     handleBlur,
+    formApi: store.formApi,
   };
 }
 
@@ -1351,13 +1472,18 @@ export function useForm<T extends DefaultValues, D = unknown>(
 ): UseFormResult<T, D> {
   const [formStore] = useState(() => createFormStore<T, D>(options));
 
-  return {
-    formStore,
-    Form: (props: React.ComponentProps<"form">) => (
+  const Form = useCallback(
+    (props: React.ComponentProps<"form">) => (
       <FormProvider formStore={formStore}>
         <form {...props} />
       </FormProvider>
     ),
+    [formStore],
+  );
+
+  return {
+    formApi: formStore.formApi,
+    Form,
   };
 }
 
@@ -1366,7 +1492,8 @@ export function createFormHook<
   D = unknown,
 >(): CreateFormHookResult<T, D> {
   return {
-    useForm,
+    defineFieldOptions,
     useField,
+    useForm,
   };
 }

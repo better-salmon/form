@@ -1,10 +1,5 @@
 import { useState } from "react";
-import {
-  createFormHook,
-  type UseFieldOptions,
-  type UseFieldOptionsAsync,
-  type UseFieldOptionsSync,
-} from "@lib/create-form-hook";
+import { createFormHook, type UseFieldOptions } from "@lib/create-form-hook";
 import { cn } from "@/utils/cn";
 
 type DemoForm = {
@@ -13,7 +8,7 @@ type DemoForm = {
 
 type Mode = "async" | "sync" | "none";
 
-const { useForm, useField } = createFormHook<DemoForm>();
+const { useForm, useField, defineFieldOptions } = createFormHook<DemoForm>();
 
 export default function AsyncSyncToggleDemo() {
   const { Form } = useForm({
@@ -92,29 +87,35 @@ export default function AsyncSyncToggleDemo() {
   );
 }
 
+const valueFieldOptionsNone = defineFieldOptions({
+  name: "value",
+});
+
+const valueFieldOptionsAsync = defineFieldOptions({
+  name: "value",
+  debounceMs: 1200,
+  respondAsync: async (ctx) => {
+    await new Promise((r) => setTimeout(r, 1000));
+    return ctx.helpers.validation.valid();
+  },
+});
+
+const valueFieldOptionsSync = defineFieldOptions({
+  name: "value",
+  respond: (ctx) => {
+    return ctx.helpers.validation.valid();
+  },
+});
+
 function ValueField({ mode }: Readonly<{ mode: Mode }>) {
   let options: UseFieldOptions<DemoForm, "value">;
 
   if (mode === "async") {
-    options = {
-      name: "value" as const,
-      debounceMs: 1200,
-      respondAsync: async (ctx) => {
-        await new Promise((r) => setTimeout(r, 1000));
-        return ctx.helpers.validation.valid();
-      },
-    } as UseFieldOptionsAsync<DemoForm, "value">;
+    options = valueFieldOptionsAsync;
   } else if (mode === "sync") {
-    options = {
-      name: "value" as const,
-      respond: (ctx) => {
-        return ctx.helpers.validation.valid();
-      },
-    } as UseFieldOptionsSync<DemoForm, "value">;
+    options = valueFieldOptionsSync;
   } else {
-    options = {
-      name: "value" as const,
-    } as UseFieldOptionsSync<DemoForm, "value">;
+    options = valueFieldOptionsNone;
   }
 
   const field = useField(options);
