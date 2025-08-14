@@ -1,10 +1,5 @@
 {
   "mcpServers": {
-    "eslint": {
-      "command": "pnpm dlx",
-      "args": ["@eslint/mcp@latest"],
-      "env": {}
-    },
     "context7": {
       "command": "pnpm dlx",
       "args": ["@upstash/context7-mcp@latest"]
@@ -16,6 +11,10 @@
     "git": {
       "command": "uvx",
       "args": ["mcp-server-git"]
+    },
+    "sequential-thinking": {
+      "command": "pnpm dlx",
+      "args": ["@modelcontextprotocol/server-sequential-thinking@latest"]
     }
   }
 }
