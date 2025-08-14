@@ -440,7 +440,7 @@ export type UseFieldOptions<
 // Field View helpers
 // =====================================
 
-function getFieldViewFromMaps<T extends DefaultValues, D, F extends keyof T>(
+function buildFieldView<T extends DefaultValues, D, F extends keyof T>(
   fieldsMap: FieldMap<T, D>,
   mountedFields: Set<keyof T>,
   fieldName: F,
@@ -507,7 +507,7 @@ function force(debounceMs?: number): ValidationFlowForce {
   } as ValidationFlowForce;
 }
 
-function toInternalOptions<T extends DefaultValues, K extends keyof T, D>(
+function normalizeFieldOptions<T extends DefaultValues, K extends keyof T, D>(
   name: K,
   opts: FieldOptionsConfig<T, K, D>,
 ): InternalFieldOptions<T, K, D> {
@@ -546,6 +546,16 @@ function FormProvider<T extends DefaultValues, D = unknown>({
   formStore: FormStore<T, D>;
 }>) {
   return <StoreContext value={formStore}>{children}</StoreContext>;
+}
+
+// =====================================
+// Helper Functions
+// =====================================
+
+function invariant(condition: unknown, message: string): asserts condition {
+  if (!condition) {
+    throw new Error(message);
+  }
 }
 
 // =====================================
@@ -690,11 +700,11 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   };
 
   // -- Internal getters/setters
-  function requireEntry<K extends keyof T>(name: K): FieldEntry<T[K], D> {
+  function getEntryOrThrow<K extends keyof T>(name: K): FieldEntry<T[K], D> {
     const entry = fieldsMap.get(name);
-    if (!entry) {
-      throw new Error(`Unknown field: ${String(name)}`);
-    }
+
+    invariant(entry, `Unknown field: ${String(name)}`);
+
     return entry as unknown as FieldEntry<T[K], D>;
   }
 
@@ -751,7 +761,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   function setFieldState(field: keyof T, state: FieldState<D>) {
-    requireEntry(field).validationState.setValue(state, deepEqual);
+    getEntryOrThrow(field).validationState.setValue(state, deepEqual);
   }
 
   function setLastValidatedValue<K extends keyof T>(field: K, value: T[K]) {
@@ -818,14 +828,10 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     setLastValidatedValue(field, value);
     lastValidatedChanges.set(
       field,
-      requireEntry(field).meta.numberOfChanges.getValue(),
+      getEntryOrThrow(field).meta.numberOfChanges.getValue(),
     );
 
-    const currentFieldView = getFieldViewFromMaps(
-      fieldsMap,
-      mountedFields,
-      field,
-    );
+    const currentFieldView = buildFieldView(fieldsMap, mountedFields, field);
     const std = opts.standardSchema;
 
     opts
@@ -849,7 +855,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           submit: api.submit,
           revalidate: api.revalidate,
           getField: (fieldName) =>
-            getFieldViewFromMaps(fieldsMap, mountedFields, fieldName),
+            buildFieldView(fieldsMap, mountedFields, fieldName),
         },
       })
       .then((result) => {
@@ -904,15 +910,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         if (
           shouldSkipAutoValidation(
             getRunningValidation(field),
-            requireEntry(field).value.getValue(),
+            getEntryOrThrow(field).value.getValue(),
             getLastValidatedValue(field),
             lastValidatedChanges.get(field) ?? 0,
-            requireEntry(field).meta.numberOfChanges.getValue(),
+            getEntryOrThrow(field).meta.numberOfChanges.getValue(),
           )
         ) {
           return;
         }
-        const value = requireEntry(field).value.getValue();
+        const value = getEntryOrThrow(field).value.getValue();
         const debounceMs = normalizeDebounceMs(
           flow.debounceMs ?? opts.debounceMs ?? defaultDebounceMs,
         );
@@ -920,7 +926,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         return;
       }
       case "force": {
-        const value = requireEntry(field).value.getValue();
+        const value = getEntryOrThrow(field).value.getValue();
         const debounceMs = normalizeDebounceMs(
           flow.debounceMs ?? opts.debounceMs ?? defaultDebounceMs,
         );
@@ -960,8 +966,8 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       return;
     }
 
-    const value = requireEntry(target).value.getValue();
-    const currentView = getFieldViewFromMaps(fieldsMap, mountedFields, target);
+    const value = getEntryOrThrow(target).value.getValue();
+    const currentView = buildFieldView(fieldsMap, mountedFields, target);
     const std = opts.standardSchema;
 
     const result = opts.respond?.({
@@ -976,7 +982,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         submit: api.submit,
         revalidate: api.revalidate,
         getField: (fieldName) =>
-          getFieldViewFromMaps(fieldsMap, mountedFields, fieldName),
+          buildFieldView(fieldsMap, mountedFields, fieldName),
       },
       helpers: {
         validation: validationHelper,
@@ -1108,7 +1114,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       const incrementChanges = options?.incrementChanges ?? true;
       const shouldDispatch = options?.dispatch ?? true;
 
-      const entry = requireEntry(name);
+      const entry = getEntryOrThrow(name);
       const previousValue = entry.value.getValue();
       const hasChanged = !deepEqual(previousValue, value);
       if (hasChanged) {
@@ -1141,7 +1147,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       });
 
       if (options?.meta) {
-        const entry = requireEntry(name);
+        const entry = getEntryOrThrow(name);
         entry.meta.isTouched.setValue(false);
         entry.meta.numberOfChanges.setValue(0);
         entry.meta.numberOfSubmissions.setValue(0);
@@ -1153,7 +1159,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       }
     },
     touch: (name: keyof T) => {
-      requireEntry(name).meta.isTouched.setValue(true);
+      getEntryOrThrow(name).meta.isTouched.setValue(true);
     },
     submit: (fields?: readonly (keyof T)[]) => {
       const toSubmit = new Set(
@@ -1164,7 +1170,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           if (!mountedFields.has(f)) {
             continue;
           }
-          const entry = requireEntry(f);
+          const entry = getEntryOrThrow(f);
           entry.meta.numberOfSubmissions.setValue(
             entry.meta.numberOfSubmissions.getValue() + 1,
           );
@@ -1202,7 +1208,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       fieldOptions.delete(name);
       return;
     }
-    const internal = toInternalOptions(name, opts);
+    const internal = normalizeFieldOptions(name, opts);
     fieldOptions.set(name, internal);
     registerReactionsFor(name, internal);
   }
@@ -1240,7 +1246,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     dispatchBlur,
     registerOptions,
     unregisterOptions,
-    getField: requireEntry,
+    getField: getEntryOrThrow,
     mount,
     unmount,
     setValue: api.setValue,
