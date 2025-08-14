@@ -11,9 +11,18 @@ import eslintPluginDeMorgan from "eslint-plugin-de-morgan";
 import jsxA11y from "eslint-plugin-jsx-a11y";
 import tseslint from "typescript-eslint";
 import { globalIgnores } from "eslint/config";
+import vitest from "@vitest/eslint-plugin";
+import playwright from "eslint-plugin-playwright";
 
 export default tseslint.config([
-  globalIgnores(["dist", "dist-lib", "node_modules", "dist-ssr"]),
+  globalIgnores([
+    "dist",
+    "dist-lib",
+    "node_modules",
+    "dist-ssr",
+    "test-results",
+    "playwright-report",
+  ]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [
@@ -38,6 +47,8 @@ export default tseslint.config([
           "./tsconfig.app.json",
           "./tsconfig.lib.json",
           "./tsconfig.fake.json",
+          "./tsconfig.lib.test.json",
+          "./tsconfig.playwright.json",
         ],
         tsconfigRootDir: import.meta.dirname,
       },
@@ -47,6 +58,7 @@ export default tseslint.config([
       eqeqeq: "warn",
       "unicorn/prevent-abbreviations": "off",
       "unicorn/no-null": "off",
+      "unicorn/no-useless-undefined": "off",
       "react-refresh/only-export-components": "off",
       "unicorn/no-typeof-undefined": ["error", { checkGlobalVariables: true }],
       "react-hooks/exhaustive-deps": [
@@ -65,5 +77,24 @@ export default tseslint.config([
       // TODO: remove this override when finalizing the work on the lib
       "sonarjs/no-nested-functions": ["error", { threshold: 5 }],
     },
+  },
+  // Vitest rules scoped to test files
+  {
+    extends: [vitest.configs.all],
+    files: ["**/*.test.{ts,tsx}"],
+    settings: {
+      vitest: {
+        typecheck: true,
+      },
+    },
+    languageOptions: {
+      globals: {
+        ...vitest.environments.env.globals,
+      },
+    },
+  },
+  {
+    extends: [playwright.configs["flat/recommended"]],
+    files: ["tests/e2e/**/*.ts"],
   },
 ]);

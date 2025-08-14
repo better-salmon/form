@@ -23,3 +23,7 @@ dist-lib
 *.njsproj
 *.sln
 *.sw?
+
+# Tests
+test-results
+playwright-report

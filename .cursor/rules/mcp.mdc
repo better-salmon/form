@@ -1,0 +1,13 @@
+---
+alwaysApply: true
+---
+
+# Using MCPs effectively
+
+## Third‑party npm packages (Context7)
+
+- Prefer Context7 docs over cached knowledge for npm packages.
+
+## Git operations (Git MCP)
+
+- Use the Git MCP to inspect diffs, stage files, create branches, and commit edits to `.cursor/rules/*.mdc` and source files.

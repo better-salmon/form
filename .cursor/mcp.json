@@ -1,12 +1,20 @@
 {
   "mcpServers": {
-    "eslint": {
-      "command": "npx",
-      "args": ["@eslint/mcp@latest"],
-      "env": {}
-    },
     "context7": {
-      "url": "https://mcp.context7.com/mcp"
+      "command": "pnpm dlx",
+      "args": ["@upstash/context7-mcp@latest"]
+    },
+    "playwright": {
+      "command": "pnpm dlx",
+      "args": ["@playwright/mcp@latest"]
+    },
+    "git": {
+      "command": "uvx",
+      "args": ["mcp-server-git"]
+    },
+    "sequential-thinking": {
+      "command": "pnpm dlx",
+      "args": ["@modelcontextprotocol/server-sequential-thinking@latest"]
     }
   }
 }

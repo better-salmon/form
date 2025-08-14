@@ -1,1814 +1,1457 @@
-import {
-  createContext,
-  use,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { createStore, useStore, type StoreApi } from "zustand";
-import { mutative } from "zustand-mutative";
-import { useShallow } from "zustand/react/shallow";
+import { createContext, use, useCallback, useMemo, useState } from "react";
+import { signal, useSignal, type Signal } from "@lib/signals/signals";
 import { deepEqual } from "@lib/deep-equal";
-import { useIsomorphicEffect } from "@lib/use-isomorphic-effect";
-import { type StandardSchemaV1 } from "@standard-schema/spec";
+import { normalizeDebounceMs, normalizeNumber } from "@lib/normalize-number";
 import {
   standardValidate,
   standardValidateAsync,
 } from "@lib/standard-validate";
-import { dedupePrimitiveArray } from "@lib/dedupe-primitive-array";
-import { normalizeNumber, normalizeDebounceMs } from "@lib/normalize-number";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { useIsomorphicEffect } from "@lib/use-isomorphic-effect";
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-
-// Register the callback for all possible actions
-const ACTIONS: Action[] = ["change", "blur", "submit", "mount"];
-
-export const DEFAULT_WATCHER_MAX_STEPS = 1000;
-
-// ============================================================================
-// UTILITY TYPES
-// ============================================================================
+// =====================================
+// Domain Types and Constants
+// =====================================
 
 type Prettify<T> = {
   [K in keyof T]: T[K];
   // eslint-disable-next-line sonarjs/no-useless-intersection -- this is a common pattern for prettifying types
 } & {};
 
+export type Action = "change" | "blur" | "submit" | "mount";
+const ACTIONS: Action[] = ["change", "blur", "submit", "mount"];
+const DEFAULT_WATCHER_MAX_STEPS = 1000;
+const DEFAULT_DEBOUNCE_MS = 500;
+
 type DefaultValues = Record<string, unknown>;
 
-// ==========================================================================
-// BRANDED VALIDATION STATES + FACTORIES
-// ==========================================================================
-
-// Brands prevent users from constructing states without helper factories
+// Brand markers
 declare const FIELD_STATE_BRAND: unique symbol;
 declare const FLOW_CONTROL_BRAND: unique symbol;
 
-export type InvalidState<D = unknown> = {
+// =====================================
+// Field State Types
+// =====================================
+
+type FieldStateValid<D = unknown> = {
+  type: "valid";
+  details?: D;
   readonly [FIELD_STATE_BRAND]: true;
+};
+
+type FieldStateInvalid<D = unknown> = {
   type: "invalid";
   issues: readonly StandardSchemaV1.Issue[];
   details?: D;
+  readonly [FIELD_STATE_BRAND]: true;
 };
 
-export type WarningState<D = unknown> = {
-  readonly [FIELD_STATE_BRAND]: true;
+type FieldStateWarning<D = unknown> = {
   type: "warning";
   issues: readonly StandardSchemaV1.Issue[];
   details?: D;
+  readonly [FIELD_STATE_BRAND]: true;
 };
 
-export type ValidState<D = unknown> = {
-  readonly [FIELD_STATE_BRAND]: true;
-  type: "valid";
-  details?: D;
-};
-
-export type PendingState<D = unknown> = {
-  readonly [FIELD_STATE_BRAND]: true;
-  type: "pending";
-  details?: D;
-};
-
-export type WaitingState<D = unknown> = {
-  readonly [FIELD_STATE_BRAND]: true;
+type FieldStateWaiting<D = unknown> = {
   type: "waiting";
   details?: D;
+  readonly [FIELD_STATE_BRAND]: true;
 };
 
-export type CheckingState<D = unknown> = {
-  readonly [FIELD_STATE_BRAND]: true;
+type FieldStateChecking<D = unknown> = {
   type: "checking";
   details?: D;
+  readonly [FIELD_STATE_BRAND]: true;
 };
 
-export type ValidationFactory<D = unknown> = {
-  valid: (props?: { details?: D }) => ValidState<D>;
-  invalid: (props?: {
-    issues?: readonly StandardSchemaV1.Issue[];
-    details?: D;
-  }) => InvalidState<D>;
-  warning: (props?: {
-    issues?: readonly StandardSchemaV1.Issue[];
-    details?: D;
-  }) => WarningState<D>;
-  pending: (props?: { details?: D }) => PendingState<D>;
-  waiting: (props?: { details?: D }) => WaitingState<D>;
-  checking: (props?: { details?: D }) => CheckingState<D>;
-  async: {
-    skip: () => SkipValidationFlowControl;
-    force: (debounceMs?: number) => ForceValidationFlowControl;
-    auto: (debounceMs?: number) => AutoValidationFlowControl;
-  };
+type FieldStateIdle<D = unknown> = {
+  type: "idle";
+  details?: D;
+  readonly [FIELD_STATE_BRAND]: true;
 };
 
-// ============================================================================
-// WATCHER TYPES
-// ============================================================================
+export type FieldState<D = unknown> =
+  | FieldStateValid<D>
+  | FieldStateInvalid<D>
+  | FieldStateWarning<D>
+  | FieldStateWaiting<D>
+  | FieldStateChecking<D>
+  | FieldStateIdle<D>;
 
-type WatchFieldsConfig<
-  T extends DefaultValues,
-  CurrentField extends keyof T,
-  D = unknown,
-> = {
-  [WatchedField in Exclude<keyof T, CurrentField>]?: (props: {
-    action: Action;
-    watchedValue: T[WatchedField];
-    watchedField: Prettify<Field<T[WatchedField], D>>;
-    currentField: Prettify<Field<T[CurrentField], D>>;
-    formApi: {
-      validate: (field: keyof T) => void;
-      setValue: <K extends keyof T>(field: K, value: T[K]) => void;
-      getField: <K extends keyof T>(
-        field: K,
-      ) => Prettify<Field<T[K], D> & { isMounted: boolean }>;
-      reset: (field: keyof T) => void;
-      touch: (field: keyof T) => void;
+export type FinalFieldState<D = unknown> =
+  | FieldStateIdle<D>
+  | FieldStateValid<D>
+  | FieldStateInvalid<D>
+  | FieldStateWarning<D>;
+
+// =====================================
+// Validation Flow Types
+// =====================================
+
+type ValidationFlowSkip = {
+  type: "async";
+  strategy: "skip";
+  readonly [FLOW_CONTROL_BRAND]: true;
+};
+type ValidationFlowAuto = {
+  type: "async";
+  strategy: "auto";
+  debounceMs?: number;
+  readonly [FLOW_CONTROL_BRAND]: true;
+};
+type ValidationFlowForce = {
+  type: "async";
+  strategy: "force";
+  debounceMs?: number;
+  readonly [FLOW_CONTROL_BRAND]: true;
+};
+
+export type ValidationFlow =
+  | ValidationFlowSkip
+  | ValidationFlowAuto
+  | ValidationFlowForce;
+
+// =====================================
+// Field View and Metadata
+// =====================================
+
+export type FieldMeta = {
+  isTouched: boolean;
+  numberOfChanges: number;
+  numberOfSubmissions: number;
+};
+
+export type FieldView<T, D = unknown> = {
+  value: T;
+  meta: FieldMeta;
+  validationState: FieldState<D>;
+  isMounted: boolean;
+};
+
+// A sync-only variant that intentionally hides async flow helpers
+type ValidationHelperSync<D = unknown> = {
+  valid(p?: { details?: D }): FieldStateValid<D>;
+  invalid(p?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }): FieldStateInvalid<D>;
+  warning(p?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }): FieldStateWarning<D>;
+  idle(p?: { details?: D }): FieldStateIdle<D>;
+};
+
+export type ValidationHelperAsync<D = unknown> = Prettify<
+  {
+    async: {
+      skip(): ValidationFlowSkip;
+      auto(debounceMs?: number): ValidationFlowAuto;
+      force(debounceMs?: number): ValidationFlowForce;
     };
-  }) => void;
+  } & ValidationHelperSync<D>
+>;
+
+type AsyncValidationHelper<D = unknown> = {
+  valid(p?: { details?: D }): FieldStateValid<D>;
+  invalid(p?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }): FieldStateInvalid<D>;
+  warning(p?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }): FieldStateWarning<D>;
+  idle(p?: { details?: D }): FieldStateIdle<D>;
 };
 
-// Clean watcher storage that executes with proper state context
-type StoredWatcher<T extends DefaultValues, D = unknown> = {
-  targetField: keyof T;
-  watchedField: keyof T;
-  execute: (
-    action: Action,
-    getState: () => Store<T, D> & Actions<T, D>,
-    validateInternal: (field: keyof T, action: Action) => void,
-  ) => void;
+// =====================================
+// Storage Types
+// =====================================
+
+type FieldEntry<V, D = unknown> = {
+  value: Signal<V>;
+  meta: {
+    isTouched: Signal<boolean>;
+    numberOfChanges: Signal<number>;
+    numberOfSubmissions: Signal<number>;
+  };
+  validationState: Signal<FieldState<D>>;
 };
 
-// ============================================================================
-// RUNNING VALIDATION TYPES
-// ============================================================================
+type FieldMap<T extends DefaultValues, D = unknown> = Map<
+  keyof T,
+  FieldEntry<T[keyof T], D>
+>;
 
-type RunningValidation<T = unknown> = {
+// =====================================
+// Internal Types
+// =====================================
+
+type RunningValidation<T> = {
   stateSnapshot: T;
+  timeoutId?: ReturnType<typeof setTimeout>;
   abortController?: AbortController;
-  timeoutId?: NodeJS.Timeout;
   validationId: number;
 };
 
-type RunningValidationsMap<T extends DefaultValues> = {
-  [K in keyof T]?: RunningValidation<T[K]>;
-};
-
-// ============================================================================
-// FIELD TYPES
-// ============================================================================
-
-type Action = "change" | "blur" | "submit" | "mount";
-
-// Union of branded validation states
-
-type FieldState<D = unknown> =
-  | InvalidState<D>
-  | WarningState<D>
-  | ValidState<D>
-  | PendingState<D>
-  | WaitingState<D>
-  | CheckingState<D>;
-
-export type SkipValidationFlowControl = {
-  readonly [FLOW_CONTROL_BRAND]: true;
-  type: "async-validator";
-  strategy: "skip";
-};
-
-export type ForceValidationFlowControl = {
-  readonly [FLOW_CONTROL_BRAND]: true;
-  type: "async-validator";
-  strategy: "force";
+type InternalFieldOptions<T extends DefaultValues, K extends keyof T, D> = {
+  name: K;
+  standardSchema?: StandardSchemaV1<T[K]>;
   debounceMs?: number;
-};
-
-export type AutoValidationFlowControl = {
-  readonly [FLOW_CONTROL_BRAND]: true;
-  type: "async-validator";
-  strategy: "auto";
-  debounceMs?: number;
-};
-
-type ValidationFlowControl =
-  | SkipValidationFlowControl
-  | ForceValidationFlowControl
-  | AutoValidationFlowControl;
-
-export type Field<T = unknown, D = unknown> = {
-  value: T;
-  meta: {
-    isTouched: boolean;
-    numberOfChanges: number;
-    numberOfSubmissions: number;
-  };
-  validationState: FieldState<D>;
-};
-
-type FieldValidatorProps<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-> = {
-  action: Action;
-  value: T[K];
-  meta: Field<T[K]>["meta"];
-  validationState: Field<T[K], D>["validationState"];
-  validateWithStandardSchema: () =>
-    | readonly StandardSchemaV1.Issue[]
-    | undefined;
-  validation: ValidationFactory<D>;
-  formApi: {
-    getField: <F extends Exclude<keyof T, K>>(
-      field: F,
-    ) => {
-      value: T[F];
-      meta: Field<T[F], D>["meta"];
-      isMounted: boolean;
-      validationState: Field<T[F], D>["validationState"];
-      validateWithStandardSchema: () =>
-        | readonly StandardSchemaV1.Issue[]
-        | undefined;
-    };
+  respond?: (
+    ctx: RespondContext<T, K, D> | RespondContextSync<T, K, D>,
+  ) => FinalFieldState<D> | ValidationFlow | void;
+  respondAsync?: (
+    ctx: RespondAsyncContext<T, K, D>,
+  ) => Promise<FinalFieldState<D>>;
+  triggers: {
+    self: Set<Action>;
+    from: Map<Exclude<keyof T, K>, Set<Action>>;
   };
 };
 
-type FieldAsyncValidatorProps<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-> = {
-  action: Action;
-  value: T[K];
-  meta: Field<T[K]>["meta"];
-  validationState: Field<T[K], D>["validationState"];
-  getAbortSignal: () => AbortSignal;
-  validateWithStandardSchemaAsync: () => Promise<
-    readonly StandardSchemaV1.Issue[] | undefined
-  >;
-  validation: ValidationFactory<D>;
-  formApi: {
-    getField: <F extends Exclude<keyof T, K>>(
-      field: F,
-    ) => {
-      value: T[F];
-      meta: Field<T[F], D>["meta"];
-      isMounted: boolean;
-      validationState: Field<T[F], D>["validationState"];
-      validateWithStandardSchemaAsync: () => Promise<
-        readonly StandardSchemaV1.Issue[] | undefined
-      >;
-    };
-  };
+type InternalValidationHelper<D = unknown> = {
+  waiting: (p?: { details?: D }) => FieldStateWaiting<D>;
+  checking: (p?: { details?: D }) => FieldStateChecking<D>;
 };
 
-type SyncValidatorResult<D = unknown> =
-  | Exclude<FieldState<D>, WaitingState<D> | CheckingState<D>>
-  | ValidationFlowControl;
+// =====================================
+// Store and Hook Types
+// =====================================
 
-type SyncValidatorResultWithoutFlowControl<D = unknown> = Exclude<
-  FieldState<D>,
-  WaitingState<D> | CheckingState<D>
->;
-
-type AsyncValidatorResult<D = unknown> =
-  | ValidState<D>
-  | InvalidState<D>
-  | WarningState<D>;
-
-type ValidatorWithFlowControl<
-  TForm extends DefaultValues,
-  K extends keyof TForm,
-  D = unknown,
-> = (
-  props: Prettify<FieldValidatorProps<TForm, K, D>>,
-) => SyncValidatorResult<D> | void;
-
-type ValidatorWithoutFlowControl<
-  TForm extends DefaultValues,
-  K extends keyof TForm,
-  D = unknown,
-> = (
-  props: Prettify<FieldValidatorProps<TForm, K, D>>,
-) => SyncValidatorResultWithoutFlowControl<D> | void;
-
-type AsyncValidator<T extends DefaultValues, K extends keyof T, D = unknown> = (
-  props: Prettify<FieldAsyncValidatorProps<T, K, D>>,
-) => Promise<AsyncValidatorResult<D>>;
-
-export type FieldsMap<T extends DefaultValues, D = unknown> = {
-  [K in keyof T]: Field<T[K], D>;
+type FormApi<T extends DefaultValues, D = unknown> = {
+  getFieldView: <K extends keyof T>(name: K) => FieldView<T[K], D>;
 };
 
-export type ValidatorsMap<T extends DefaultValues, D = unknown> = {
-  [K in keyof T]?: {
-    validator?:
-      | ValidatorWithFlowControl<T, K, D>
-      | ValidatorWithoutFlowControl<T, K, D>;
-    asyncValidator?: AsyncValidator<T, K, D>;
-    debounceMs?: number;
-  };
-};
-
-export type LastValidatedFieldsMap<T extends DefaultValues> = {
-  [K in keyof T]?: T[K];
-};
-
-export type LastValidatedNumberOfChangesMap<T extends DefaultValues> = {
-  [K in keyof T]?: number;
-};
-
-export type FieldEntries<T extends DefaultValues> = {
-  [K in keyof T]: [K, T[K]];
-}[keyof T][];
-
-export type ValidationIdsMap<T extends DefaultValues> = {
-  [K in keyof T]: number;
-};
-
-export type StandardSchemasMap<T extends DefaultValues> = {
-  [K in keyof T]?: StandardSchemaV1<T[K]>;
-};
-
-export type IsMountedMap<T extends DefaultValues> = {
-  [K in keyof T]: boolean;
-};
-
-export type FieldDependenciesMap<
-  T extends DefaultValues,
-  K extends readonly (keyof T)[],
-  D = unknown,
-> = {
-  [P in K[number]]: Prettify<Field<T[P], D> & { isMounted: boolean }>;
-};
-
-// ============================================================================
-// API TYPES
-// ============================================================================
-
-export type FormApi<
-  T extends DefaultValues,
-  D = unknown,
-  K extends keyof T = keyof T,
-> = {
+type FormStore<T extends DefaultValues, D = unknown> = {
+  formApi: FormApi<T, D>;
+  getFieldEntry: <K extends keyof T>(name: K) => FieldEntry<T[K], D>;
+  mount: (name: keyof T) => void;
+  registerOptions: <K extends keyof T>(
+    name: K,
+    options: UseFieldOptions<T, K, D>,
+  ) => void;
+  unregisterOptions: (name: keyof T) => void;
+  unmount: (name: keyof T) => void;
+  setValue: (
+    name: keyof T,
+    value: T[keyof T],
+    options?: {
+      markTouched?: boolean;
+      incrementChanges?: boolean;
+      dispatch?: boolean;
+    },
+  ) => void;
+  dispatchBlur: (name: keyof T) => void;
   submit: (fields?: readonly (keyof T)[]) => void;
-  getField: <F extends Exclude<keyof T, K>>(
-    field: F,
-  ) => Prettify<Field<T[F], D> & { isMounted: boolean }>;
+  reset: (
+    name: keyof T,
+    options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
+  ) => void;
 };
 
-export type FieldApi<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-> = {
+type UseFieldResult<T extends DefaultValues, K extends keyof T, D = unknown> = {
   name: K;
   value: T[K];
+  meta: FieldMeta;
+  validationState: FieldState<D>;
   handleChange: (value: T[K]) => void;
-  handleSubmit: () => void;
   handleBlur: () => void;
-  meta: Field<T[K], D>["meta"];
-  formApi: Prettify<FormApi<T, D, K>>;
-  validationState: Field<T[K], D>["validationState"];
-};
-
-// ============================================================================
-// STORE TYPES
-// ============================================================================
-
-export type Store<T extends DefaultValues, D = unknown> = {
-  fieldsMap: FieldsMap<T, D>;
-  defaultValues: T;
-  validatorsMap: ValidatorsMap<T, D>;
-  runningValidations: RunningValidationsMap<T>;
-  debounceDelayMs: number;
-  lastValidatedFields: LastValidatedFieldsMap<T>;
-  lastValidatedNumberOfChanges: LastValidatedNumberOfChangesMap<T>;
-  validationIds: ValidationIdsMap<T>;
-  standardSchemasMap: StandardSchemasMap<T>;
-  isMountedMap: IsMountedMap<T>;
-};
-
-export type Actions<T extends DefaultValues, D = unknown> = {
-  setIsMountedMap: (field: keyof T, isMounted: boolean) => void;
-  setValue: <K extends keyof T>(field: K, value: T[K]) => void;
-  /** Marks a field as touched without changing value or numberOfChanges */
-  touch: (field: keyof T) => void;
-  submit: (fields?: readonly (keyof T)[]) => void;
-  setDefaultValues: (defaultValues: T) => void;
-  /** Sets the global default debounce delay (ms) used for auto/force async validation */
-  setDebounceDelayMs: (debounceMs: number) => void;
-  setValidatorsMap: <K extends keyof T>(
-    field: K,
-    validators:
-      | {
-          validator?:
-            | ValidatorWithFlowControl<T, K, D>
-            | ValidatorWithoutFlowControl<T, K, D>;
-          asyncValidator?: AsyncValidator<T, K, D>;
-          debounceMs?: number;
-        }
-      | undefined,
-  ) => void;
-  validate: (field: keyof T, action: Action) => void;
-  abortValidation: (field: keyof T) => void;
-  setStandardSchemasMap: <K extends keyof T>(
-    field: K,
-    standardSchema: StandardSchemaV1<T[K]> | undefined,
-  ) => void;
-  getField: <F extends keyof T>(
-    field: F,
-  ) => Prettify<Field<T[F], D> & { isMounted: boolean }>;
-  registerWatchers: <K extends keyof T>(
-    targetField: K,
-    watchFields: WatchFieldsConfig<T, K, D>,
-  ) => void;
-  unregisterWatchers: (targetField: keyof T) => void;
-  executeWatchers: (watchedField: keyof T, action: Action) => void;
-};
-
-// ============================================================================
-// COMPONENT & HOOK OPTION TYPES
-// ============================================================================
-
-export type UseFormOptions<T extends DefaultValues> = {
-  defaultValues: T;
-  /** Global default debounce delay (ms) for async validations when not overridden per-field */
-  debounceDelayMs?: number;
-  /** Max allowed steps in a single watcher dispatch chain to prevent feedback loops (default: 1000) */
-  watcherMaxSteps?: number;
+  formApi: FormApi<T, D>;
 };
 
 export type UseFormResult<T extends DefaultValues, D = unknown> = {
-  Field: <K extends keyof T>(props: FieldProps<T, K, D>) => React.ReactNode;
-  formStore: ReturnType<typeof createFormStoreMutative<T, D>>;
+  formApi: FormApi<T, D>;
   Form: (props: React.ComponentProps<"form">) => React.ReactElement;
 };
 
-// When asyncValidator is provided, validator can return validation flow controls
-export type UseFieldOptionsWithAsync<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-> = {
-  name: K;
-  validator?: ValidatorWithFlowControl<T, K, D>;
-  asyncValidator: AsyncValidator<T, K, D>;
+type UseFormOptions<T extends DefaultValues> = {
+  defaultValues: T;
   debounceMs?: number;
-  standardSchema?: StandardSchemaV1<T[K]>;
-  watchFields?: WatchFieldsConfig<T, K, D>;
+  watcherMaxSteps?: number;
 };
 
-// When asyncValidator is not provided, validator cannot return validation flow controls
-export type UseFieldOptionsWithoutAsync<
+type CreateFormHookResult<T extends DefaultValues, D = unknown> = {
+  useForm: (options: UseFormOptions<T>) => UseFormResult<T, D>;
+  useField: <K extends keyof T>(
+    options: UseFieldOptions<T, K, D>,
+  ) => Prettify<UseFieldResult<T, K, D>>;
+  defineFieldOptions: <K extends keyof T>(
+    options: UseFieldOptions<T, K, D>,
+  ) => UseFieldOptions<T, K, D>;
+};
+
+// =====================================
+// Graph Utilities
+// =====================================
+
+function makeEdgeKey(
+  watched: PropertyKey,
+  target: PropertyKey,
+  action: Action,
+): string {
+  return `${String(watched)}->${String(target)}@${action}`;
+}
+
+function makeCauseForTarget<T extends DefaultValues, K extends keyof T>(
+  target: K,
+  causeField: keyof T,
+  action: Action,
+):
+  | { isSelf: true; field: K; action: Action }
+  | { isSelf: false; field: Exclude<keyof T, K>; action: Action } {
+  if (causeField === target) {
+    return { isSelf: true, field: target, action };
+  }
+  return {
+    isSelf: false,
+    field: causeField as Exclude<keyof T, K>,
+    action,
+  };
+}
+
+// =====================================
+// Respond Contexts (sync/async)
+// =====================================
+
+export type RespondContext<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
 > = {
-  name: K;
-  validator?: ValidatorWithoutFlowControl<T, K, D>;
-  asyncValidator?: never;
-  debounceMs?: never;
+  action: Action;
+  cause:
+    | { isSelf: true; field: K; action: Action }
+    | { isSelf: false; field: Exclude<keyof T, K>; action: Action };
+  value: T[K];
+  current: Prettify<FieldView<T[K], D>>;
+  form: {
+    setValue: <F extends keyof T>(
+      name: F,
+      value: T[F],
+      options?: {
+        markTouched?: boolean;
+        incrementChanges?: boolean;
+        dispatch?: boolean;
+      },
+    ) => void;
+    reset: (
+      name: keyof T,
+      options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
+    ) => void;
+    touch: (name: keyof T) => void;
+    submit: (fields?: readonly (keyof T)[]) => void;
+    getFieldView: <F extends keyof T>(name: F) => FieldView<T[F], D>;
+  };
+  helpers: {
+    validation: ValidationHelperAsync<D>;
+    validateWithStandardSchema: () =>
+      | readonly StandardSchemaV1.Issue[]
+      | undefined;
+  };
+};
+
+// Sync variant: identical to RespondContext but without async helpers on validation
+export type RespondContextSync<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+> = {
+  action: Action;
+  cause:
+    | { isSelf: true; field: K; action: Action }
+    | { isSelf: false; field: Exclude<keyof T, K>; action: Action };
+  value: T[K];
+  current: Prettify<FieldView<T[K], D>>;
+  form: {
+    setValue: <F extends keyof T>(
+      name: F,
+      value: T[F],
+      options?: {
+        markTouched?: boolean;
+        incrementChanges?: boolean;
+        dispatch?: boolean;
+      },
+    ) => void;
+    reset: (
+      name: keyof T,
+      options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
+    ) => void;
+    touch: (name: keyof T) => void;
+    submit: (fields?: readonly (keyof T)[]) => void;
+    getFieldView: <F extends keyof T>(name: F) => FieldView<T[F], D>;
+  };
+  helpers: {
+    validation: ValidationHelperSync<D>;
+    validateWithStandardSchema: () =>
+      | readonly StandardSchemaV1.Issue[]
+      | undefined;
+  };
+};
+
+type RespondAsyncContext<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+> = {
+  action: Action;
+  cause:
+    | { isSelf: true; field: K; action: Action }
+    | { isSelf: false; field: Exclude<keyof T, K>; action: Action };
+  value: T[K];
+  current: Prettify<FieldView<T[K], D>>;
+  meta: FieldMeta;
+  validationState: FieldState<D>;
+  signal: AbortSignal;
+  helpers: {
+    validation: AsyncValidationHelper<D>;
+    validateWithStandardSchemaAsync: () => Promise<
+      readonly StandardSchemaV1.Issue[] | undefined
+    >;
+  };
+  form: {
+    setValue: <F extends keyof T>(
+      name: F,
+      value: T[F],
+      options?: {
+        markTouched?: boolean;
+        incrementChanges?: boolean;
+        dispatch?: boolean;
+      },
+    ) => void;
+    reset: (
+      name: keyof T,
+      options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
+    ) => void;
+    touch: (name: keyof T) => void;
+    submit: (fields?: readonly (keyof T)[]) => void;
+    getFieldView: <F extends keyof T>(name: F) => FieldView<T[F], D>;
+  };
+};
+
+// =====================================
+// Public Options (sync/async) for useField
+// =====================================
+
+type SyncOnlyFieldOptionsExtension<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+> = {
   standardSchema?: StandardSchemaV1<T[K]>;
-  watchFields?: WatchFieldsConfig<T, K, D>;
+  on?: {
+    self?: Action[];
+    from?: Partial<Record<Exclude<keyof T, K>, Action[] | true>>;
+  };
+  respond: (
+    ctx: Prettify<RespondContextSync<T, K, D>>,
+  ) => FinalFieldState<D> | void;
+  respondAsync?: never;
+  debounceMs?: never;
+};
+
+type AsyncOnlyFieldOptionsExtension<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+> = {
+  standardSchema?: StandardSchemaV1<T[K]>;
+  on?: {
+    self?: Action[];
+    from?: Partial<Record<Exclude<keyof T, K>, Action[] | true>>;
+  };
+  respond?: never;
+  respondAsync: (
+    ctx: Prettify<RespondAsyncContext<T, K, D>>,
+  ) => Promise<FinalFieldState<D>>;
+  debounceMs?: number;
+};
+
+type SyncAsyncFieldOptionsExtension<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+> = {
+  standardSchema?: StandardSchemaV1<T[K]>;
+  on?: {
+    self?: Action[];
+    from?: Partial<Record<Exclude<keyof T, K>, Action[] | true>>;
+  };
+  respond: (
+    ctx: Prettify<RespondContext<T, K, D>>,
+  ) => FinalFieldState<D> | ValidationFlow | void;
+  respondAsync: (
+    ctx: Prettify<RespondAsyncContext<T, K, D>>,
+  ) => Promise<FinalFieldState<D>>;
+  debounceMs?: number;
+};
+
+type NoValidationFieldOptionsExtension = {
+  standardSchema?: never;
+  on?: never;
+  respond?: never;
+  respondAsync?: never;
+  debounceMs?: never;
 };
 
 export type UseFieldOptions<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
-> = UseFieldOptionsWithAsync<T, K, D> | UseFieldOptionsWithoutAsync<T, K, D>;
-
-export type FieldOptionsInput<T extends DefaultValues, D = unknown> = {
-  [K in keyof T]: UseFieldOptions<T, K, D> & { name: K };
-}[keyof T];
-
-export type FieldProps<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-> = UseFieldOptions<T, K, D> & {
-  children: (props: Prettify<FieldApi<T, K, D>>) => React.ReactNode;
-};
-
-export type CreateFormHookResult<T extends DefaultValues, D = unknown> = {
-  useForm: (options: UseFormOptions<T>) => UseFormResult<T, D>;
-  useField: <K extends keyof T>(
-    options: UseFieldOptions<T, K, D>,
-  ) => Prettify<FieldApi<T, K, D>>;
-  useFieldDependencies: <K extends (keyof T)[]>(
-    dependencies?: K,
-  ) => FieldDependenciesMap<T, K, D>;
-};
-
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
-
-/**
- * Creates initial fields map from default values
- */
-function createInitialFieldsMap<T extends DefaultValues, D = unknown>(
-  defaultValues: T,
-): FieldsMap<T, D> {
-  const entries = Object.entries(defaultValues) as FieldEntries<T>;
-
-  return Object.fromEntries(
-    entries.map(([field, defaultValue]) => [
-      field,
-      {
-        value: defaultValue,
-        meta: {
-          isTouched: false,
-          numberOfChanges: 0,
-          numberOfSubmissions: 0,
-        },
-        validationState: {
-          type: "pending",
-        } as PendingState<D>,
-      } satisfies Field<T[typeof field], D>,
-    ]),
-  ) as FieldsMap<T, D>;
-}
-
-/**
- * Extracts field names from fields map
- */
-function getFieldNames<T extends DefaultValues, D = unknown>(
-  fieldsMap: FieldsMap<T, D>,
-) {
-  return Object.keys(fieldsMap) as (keyof T)[];
-}
-
-// ============================================================================
-// STORE CREATION
-// ============================================================================
-
-/**
- * Creates the main form store with mutative capabilities
- */
-function createFormStoreMutative<T extends DefaultValues, D = unknown>(
-  options: UseFormOptions<T>,
-) {
-  const store = createStore<Store<T, D> & Actions<T, D>>()(
-    mutative((set, get) => {
-      const validation = {
-        valid: (props?: { details?: D }): ValidState<D> =>
-          ({
-            type: "valid",
-            details: props?.details,
-          }) as ValidState<D>,
-        invalid: (props?: {
-          issues?: readonly StandardSchemaV1.Issue[];
-          details?: D;
-        }): InvalidState<D> =>
-          ({
-            type: "invalid",
-            issues: props?.issues ?? [],
-            details: props?.details,
-          }) as InvalidState<D>,
-        warning: (props?: {
-          issues?: readonly StandardSchemaV1.Issue[];
-          details?: D;
-        }): WarningState<D> =>
-          ({
-            type: "warning",
-            issues: props?.issues ?? [],
-            details: props?.details,
-          }) as WarningState<D>,
-        pending: (props?: { details?: D }): PendingState<D> =>
-          ({
-            type: "pending",
-            details: props?.details,
-          }) as PendingState<D>,
-        waiting: (props?: { details?: D }): WaitingState<D> =>
-          ({
-            type: "waiting",
-            details: props?.details,
-          }) as WaitingState<D>,
-        checking: (props?: { details?: D }): CheckingState<D> =>
-          ({
-            type: "checking",
-            details: props?.details,
-          }) as CheckingState<D>,
-        async: {
-          skip: (): SkipValidationFlowControl =>
-            ({
-              type: "async-validator",
-              strategy: "skip",
-            }) as SkipValidationFlowControl,
-          force: (debounceMs?: number): ForceValidationFlowControl =>
-            ({
-              type: "async-validator",
-              strategy: "force",
-              debounceMs,
-            }) as ForceValidationFlowControl,
-          auto: (debounceMs?: number): AutoValidationFlowControl =>
-            ({
-              type: "async-validator",
-              strategy: "auto",
-              debounceMs,
-            }) as AutoValidationFlowControl,
-        },
-      } as const satisfies ValidationFactory<D>;
-
-      // ========================================================================
-      // STORE-LOCAL WATCHER REGISTRY
-      // ========================================================================
-
-      /** Store-local registry to store watchers for this form instance */
-      const watchersMap = new Map<string, StoredWatcher<T, D>[]>();
-
-      // Guard to prevent watcher feedback loops within a single dispatch chain
-      type WatcherTransactionState = {
-        active: boolean;
-        depth: number;
-        visitedEdges: Set<string>;
-        steps: number;
-        maxSteps: number;
-        bailOut: boolean;
-      };
-
-      const configuredMaxSteps = normalizeNumber(options.watcherMaxSteps, {
-        fallback: DEFAULT_WATCHER_MAX_STEPS,
-        min: 1,
-        integer: "floor",
-      });
-
-      const watcherTransaction: WatcherTransactionState = {
-        active: false,
-        depth: 0,
-        visitedEdges: new Set<string>(),
-        steps: 0,
-        maxSteps: configuredMaxSteps,
-        bailOut: false,
-      };
-
-      function runInWatcherTransaction<TResult>(fn: () => TResult): TResult {
-        const isRoot = watcherTransaction.depth === 0;
-        watcherTransaction.depth += 1;
-        if (isRoot) {
-          watcherTransaction.active = true;
-          watcherTransaction.visitedEdges.clear();
-          watcherTransaction.steps = 0;
-          watcherTransaction.bailOut = false;
-        }
-        try {
-          return fn();
-        } finally {
-          watcherTransaction.depth -= 1;
-          if (watcherTransaction.depth === 0) {
-            watcherTransaction.active = false;
-            watcherTransaction.visitedEdges.clear();
-            watcherTransaction.steps = 0;
-            watcherTransaction.bailOut = false;
-          }
-        }
-      }
-
-      function makeEdgeKey(
-        watchedField: keyof T,
-        targetField: keyof T,
-        action: Action,
-      ): string {
-        // Keys are strings (DefaultValues uses Record<string, unknown>)
-        return JSON.stringify([
-          String(watchedField),
-          String(targetField),
-          action,
-        ]);
-      }
-
-      // ========================================================================
-      // TYPED HELPER FUNCTIONS FOR CLEAN MUTATIONS
-      // ========================================================================
-
-      /** Mutates fields map with type safety */
-      function mutateFields(mutator: (fields: FieldsMap<T, D>) => void) {
-        set((state) => {
-          mutator(state.fieldsMap as FieldsMap<T, D>);
-        });
-      }
-
-      /** Mutates validators map with type safety */
-      function mutateValidators(
-        mutator: (validators: ValidatorsMap<T, D>) => void,
-      ) {
-        set((state) => {
-          mutator(state.validatorsMap as ValidatorsMap<T, D>);
-        });
-      }
-
-      /** Mutates running validations with type safety */
-      function mutateRunningValidations(
-        mutator: (validations: RunningValidationsMap<T>) => void,
-      ) {
-        set((state) => {
-          mutator(state.runningValidations as RunningValidationsMap<T>);
-        });
-      }
-
-      /** Mutates validation IDs with type safety */
-      function mutateValidationIds(
-        mutator: (ids: ValidationIdsMap<T>) => void,
-      ) {
-        set((state) => {
-          mutator(state.validationIds as ValidationIdsMap<T>);
-        });
-      }
-
-      /** Sets field validation state */
-      function setFieldState(field: keyof T, state: FieldState<D>) {
-        const currentState = get().fieldsMap[field].validationState;
-
-        // Only update if the validation state actually changed
-        if (!deepEqual(currentState, state)) {
-          mutateFields((fields) => {
-            fields[field].validationState = state;
-          });
-        }
-      }
-
-      // ========================================================================
-      // HELPER FUNCTIONS
-      // ========================================================================
-
-      /** Cleans up all validation resources for a field */
-      function cleanupValidation(field: keyof T) {
-        const runningValidation = get().runningValidations[field];
-
-        if (!runningValidation) {
-          return;
-        }
-
-        // Clear timeout if exists
-        if (runningValidation.timeoutId) {
-          clearTimeout(runningValidation.timeoutId);
-        }
-
-        // Abort the async operation only if controller was created
-        if (runningValidation.abortController) {
-          runningValidation.abortController.abort();
-        }
-
-        // Remove from running validations
-        mutateRunningValidations((validations) => {
-          validations[field] = undefined;
-        });
-      }
-
-      /** Clears timeout from running validation */
-      function clearValidationTimeout(field: keyof T) {
-        mutateRunningValidations((validations) => {
-          const existing = validations[field];
-          if (existing) {
-            existing.timeoutId = undefined;
-          }
-        });
-      }
-
-      /** Updates running validation with abort controller */
-      function updateAbortController(
-        field: keyof T,
-        abortController: AbortController,
-      ) {
-        mutateRunningValidations((validations) => {
-          const existing = validations[field];
-          if (existing) {
-            existing.abortController = abortController;
-          }
-        });
-      }
-
-      /**
-       * Determines whether auto validation can be skipped for a field based on
-       * current state. Returns true when:
-       * - A validation is already running for the same value, or
-       * - The value and numberOfChanges match the last completed validation
-       */
-      function shouldSkipAutoValidation(
-        field: keyof T,
-        currentField: Field<T[keyof T]>,
-      ): boolean {
-        const state = get();
-        const runningValidation = state.runningValidations[field];
-
-        // If validation is already running and the value hasn't changed, skip
-        if (runningValidation) {
-          return deepEqual(runningValidation.stateSnapshot, currentField.value);
-        }
-
-        // Otherwise, skip if nothing changed since the last completed validation
-        const lastValidatedValue = state.lastValidatedFields[field];
-        const lastValidatedChanges = state.lastValidatedNumberOfChanges[field];
-
-        return (
-          lastValidatedValue !== undefined &&
-          deepEqual(lastValidatedValue, currentField.value) &&
-          lastValidatedChanges !== undefined &&
-          lastValidatedChanges === currentField.meta.numberOfChanges
-        );
-      }
-
-      /** Handles sync validation result that's not flow control */
-      function handleSyncValidationResult(
-        field: keyof T,
-        result: SyncValidatorResultWithoutFlowControl<D>,
-      ) {
-        setFieldState(field, result);
-        cleanupValidation(field);
-      }
-
-      /** Handles auto validation strategy */
-      function handleAutoValidation(
-        field: keyof T,
-        currentField: Field<T[keyof T]>,
-        validators: ValidatorsMap<T, D>[keyof T],
-        flowControl: AutoValidationFlowControl,
-        action: Action,
-      ) {
-        const state = get();
-        const runningValidation = state.runningValidations[field];
-
-        // Unified skip condition for auto validation
-        if (shouldSkipAutoValidation(field, currentField)) {
-          return;
-        }
-
-        // If there is a running validation but value changed, restart it
-        if (runningValidation) {
-          cleanupValidation(field);
-        }
-
-        // Start scheduled async validation if async validator exists
-        if (validators?.asyncValidator) {
-          const debounceMs = normalizeDebounceMs(
-            flowControl.debounceMs ??
-              validators.debounceMs ??
-              state.debounceDelayMs,
-          );
-
-          scheduleValidation(
-            field,
-            currentField.value,
-            validators.asyncValidator,
-            debounceMs,
-            action,
-          );
-        }
-      }
-
-      /** Handles force validation strategy */
-      function handleForceValidation(
-        field: keyof T,
-        currentField: Field<T[keyof T]>,
-        validators: ValidatorsMap<T, D>[keyof T],
-        flowControl: ForceValidationFlowControl,
-        action: Action,
-      ) {
-        // Cancel existing validation and restart from the beginning
-        cleanupValidation(field);
-
-        if (validators?.asyncValidator) {
-          const debounceMs = normalizeDebounceMs(
-            flowControl.debounceMs ??
-              validators.debounceMs ??
-              get().debounceDelayMs,
-          );
-
-          scheduleValidation(
-            field,
-            currentField.value,
-            validators.asyncValidator,
-            debounceMs,
-            action,
-          );
-        }
-      }
-
-      /** Handles async validator flow control */
-      function handleAsyncValidatorFlow(
-        field: keyof T,
-        currentField: Field<T[keyof T]>,
-        validators: ValidatorsMap<T, D>[keyof T],
-        flowControl: ValidationFlowControl,
-        action: Action,
-      ) {
-        const state = get();
-
-        switch (flowControl.strategy) {
-          case "skip": {
-            const runningValidation = state.runningValidations[field];
-            if (runningValidation) {
-              // Validation is already running, do nothing
-              return;
-            }
-            // No running validation, keep current state and never run async validation
-            break;
-          }
-
-          case "auto": {
-            handleAutoValidation(
-              field,
-              currentField,
-              validators,
-              flowControl,
-              action,
-            );
-            break;
-          }
-
-          case "force": {
-            handleForceValidation(
-              field,
-              currentField,
-              validators,
-              flowControl,
-              action,
-            );
-            break;
-          }
-        }
-      }
-
-      /** Increments validation ID for a field and returns the new ID */
-      function incrementValidationId(field: keyof T) {
-        const currentId = get().validationIds[field];
-        const newId = currentId + 1;
-
-        mutateValidationIds((ids) => {
-          ids[field] = newId;
-        });
-
-        return newId;
-      }
-
-      /** Schedules debounced validation for a field */
-      function scheduleValidation<K extends keyof T>(
-        field: K,
-        value: T[K],
-        validator: AsyncValidator<T, K, D>,
-        debounceMs: number,
-        action: Action,
-      ) {
-        // Cancel any existing validation first
-        cleanupValidation(field);
-
-        // If debounce is 0, execute immediately without setTimeout
-        if (debounceMs === 0) {
-          runValidation(field, value, validator, action);
-          return;
-        }
-
-        // Increment validation ID for this field
-        const validationId = incrementValidationId(field);
-
-        // Set field state to waiting
-        setFieldState(field, validation.waiting());
-
-        // Set up debounce timeout with extracted callback
-        const timeoutId = setTimeout(() => {
-          // Clear timeout from running validation
-          clearValidationTimeout(field);
-
-          // Start actual validation
-          runValidation(field, value, validator, action);
-        }, debounceMs);
-
-        // Store the running validation with timeout (no abortController initially)
-        mutateRunningValidations((validations) => {
-          validations[field] = {
-            stateSnapshot: value,
-            timeoutId,
-            validationId,
-          } satisfies RunningValidation<T[typeof field]>;
-        });
-      }
-
-      /** Runs async validation for a field */
-      function runValidation<K extends keyof T>(
-        field: K,
-        value: T[K],
-        validator: AsyncValidator<T, K, D>,
-        action: Action,
-      ) {
-        // Abort any existing validation for this field
-        cleanupValidation(field);
-
-        const currentField = get().fieldsMap[field];
-
-        // Increment validation ID for this field
-        const validationId = incrementValidationId(field);
-
-        // Create lazy abort signal factory
-        let abortController: AbortController | undefined;
-
-        const getAbortSignal = (): AbortSignal => {
-          if (!abortController) {
-            abortController = new AbortController();
-            // Update the running validation to store the controller
-            updateAbortController(field, abortController);
-          }
-          return abortController.signal;
-        };
-
-        // Store the running validation and update field state
-        set((state) => {
-          const validations =
-            state.runningValidations as RunningValidationsMap<T>;
-          const fields = state.fieldsMap as FieldsMap<T, D>;
-          const lastValidated =
-            state.lastValidatedFields as LastValidatedFieldsMap<T>;
-          const lastValidatedNumberOfChanges =
-            state.lastValidatedNumberOfChanges as LastValidatedNumberOfChangesMap<T>;
-
-          validations[field] = {
-            stateSnapshot: value,
-            timeoutId: undefined,
-            validationId,
-          } satisfies RunningValidation<T[typeof field]>;
-
-          // Set field state to checking and store the value being validated
-          fields[field].validationState = validation.checking();
-          lastValidated[field] = value;
-          lastValidatedNumberOfChanges[field] =
-            fields[field].meta.numberOfChanges;
-        });
-
-        const standardSchema = get().standardSchemasMap[field];
-
-        // Run async validation
-        validator({
-          action: action,
-          value,
-          meta: currentField.meta,
-          validationState: currentField.validationState,
-          getAbortSignal,
-          validateWithStandardSchemaAsync: async () =>
-            standardSchema
-              ? await standardValidateAsync(standardSchema, value)
-              : undefined,
-          validation,
-          formApi: {
-            getField: getFieldForFormApiAsync,
-          },
-        })
-          .then((result) => {
-            // Check if validation was aborted or is stale
-            if (abortController?.signal.aborted) {
-              return;
-            }
-
-            const currentValidationId = get().validationIds[field];
-            if (validationId !== currentValidationId) {
-              return;
-            }
-
-            // Update field state with result
-            setFieldState(field, result);
-            cleanupValidation(field);
-          })
-          .catch((error: unknown) => {
-            // Check if validation was aborted or is stale
-            if (abortController?.signal.aborted) {
-              return;
-            }
-
-            const currentValidationId = get().validationIds[field];
-            if (validationId !== currentValidationId) {
-              return;
-            }
-
-            // Handle validation error
-            setFieldState(
-              field,
-              validation.invalid({
-                issues: [
-                  {
-                    message:
-                      error instanceof Error
-                        ? error.message
-                        : "Validation failed",
-                  },
-                ],
-              }),
-            );
-
-            cleanupValidation(field);
-          });
-      }
-
-      // Helper function to get field data for form API
-      function getFieldForFormApi<F extends keyof T>(targetField: F) {
-        const state = get();
-        const targetFieldData = state.fieldsMap[targetField];
-        const standardSchema = state.standardSchemasMap[targetField];
-        return {
-          value: targetFieldData.value,
-          meta: targetFieldData.meta,
-          isMounted: state.isMountedMap[targetField],
-          validationState: targetFieldData.validationState,
-          validateWithStandardSchema: () =>
-            standardSchema
-              ? standardValidate(standardSchema, targetFieldData.value)
-              : undefined,
-        };
-      }
-
-      function getFieldForFormApiAsync<F extends keyof T>(targetField: F) {
-        const state = get();
-        const targetFieldData = state.fieldsMap[targetField];
-        const standardSchema = state.standardSchemasMap[targetField];
-        return {
-          value: targetFieldData.value,
-          meta: targetFieldData.meta,
-          isMounted: state.isMountedMap[targetField],
-          validationState: targetFieldData.validationState,
-          validateWithStandardSchemaAsync: async () =>
-            standardSchema
-              ? await standardValidateAsync(
-                  standardSchema,
-                  targetFieldData.value,
-                )
-              : undefined,
-        };
-      }
-
-      /** Main validation orchestrator used internally by actions */
-      function validateInternal(field: keyof T, action: Action) {
-        const state = get();
-        // Skip unmounted fields
-        if (!state.isMountedMap[field]) {
-          return;
-        }
-
-        const currentField = state.fieldsMap[field];
-        const validators = state.validatorsMap[field];
-
-        if (!validators) {
-          return;
-        }
-
-        const standardSchema = state.standardSchemasMap[field];
-
-        // Run sync validator if it exists
-        const validatorResult = validators.validator?.({
-          action,
-          value: currentField.value,
-          meta: currentField.meta,
-          validationState: currentField.validationState,
-          validateWithStandardSchema: () =>
-            standardSchema
-              ? standardValidate(standardSchema, currentField.value)
-              : undefined,
-          validation,
-          formApi: {
-            getField: <F extends Exclude<keyof T, typeof field>>(
-              targetField: F,
-            ) => getFieldForFormApi(targetField),
-          },
-        });
-
-        const resultOrValidationFlowControl =
-          validatorResult ?? validation.async.skip();
-
-        if (resultOrValidationFlowControl.type === "async-validator") {
-          handleAsyncValidatorFlow(
-            field,
-            currentField,
-            validators,
-            resultOrValidationFlowControl,
-            action,
-          );
-        } else {
-          handleSyncValidationResult(field, resultOrValidationFlowControl);
-        }
-      }
-
-      function mutateStandardSchemas(
-        mutator: (standardSchemas: StandardSchemasMap<T>) => void,
-      ) {
-        set((state) => {
-          const standardSchemas =
-            state.standardSchemasMap as StandardSchemasMap<T>;
-          mutator(standardSchemas);
-        });
-      }
-
-      function mutateIsMountedMap(
-        mutator: (isMountedMap: IsMountedMap<T>) => void,
-      ) {
-        set((state) => {
-          const isMountedMap = state.isMountedMap as IsMountedMap<T>;
-          mutator(isMountedMap);
-        });
-      }
-
-      return {
-        // ======================================================================
-        // INITIAL STATE
-        // ======================================================================
-        defaultValues: options.defaultValues,
-        fieldsMap: createInitialFieldsMap<T, D>(options.defaultValues),
-        validatorsMap: {},
-        runningValidations: {},
-        debounceDelayMs: options.debounceDelayMs ?? 500,
-        lastValidatedFields: {},
-        lastValidatedNumberOfChanges: {},
-        validationIds: Object.fromEntries(
-          Object.keys(options.defaultValues).map((field) => [field, 0]),
-        ) as ValidationIdsMap<T>,
-        standardSchemasMap: {},
-        isMountedMap: Object.fromEntries(
-          Object.keys(options.defaultValues).map((field) => [field, false]),
-        ) as IsMountedMap<T>,
-
-        // ======================================================================
-        // CONFIGURATION ACTIONS
-        // ======================================================================
-
-        /** Updates default values and initializes unset field values */
-        setDefaultValues: (defaultValues) => {
-          const currentDefaults = get().defaultValues;
-
-          // Only update if default values actually changed
-          if (!deepEqual(currentDefaults, defaultValues)) {
-            set((state) => {
-              // Use Object.assign for proper draft mutation
-              Object.assign(state.defaultValues, defaultValues);
-              const fields = state.fieldsMap as FieldsMap<T>;
-
-              for (const [field] of Object.entries(defaultValues)) {
-                fields[field as keyof T].value ??=
-                  defaultValues[field as keyof T];
-              }
-            });
-          }
-        },
-
-        /** Sets validators for a specific field */
-        setValidatorsMap: (field, validators) => {
-          const currentValidators = get().validatorsMap[field];
-
-          // Only update if validators actually changed
-          if (!deepEqual(currentValidators, validators)) {
-            mutateValidators((validatorsMap) => {
-              validatorsMap[field] = validators;
-            });
-          }
-        },
-
-        // ======================================================================
-        // FIELD VALUE ACTIONS
-        // ======================================================================
-
-        setIsMountedMap: (field, isMounted) => {
-          const currentIsMounted = get().isMountedMap[field];
-
-          // Only update if mounted state actually changed
-          if (currentIsMounted !== isMounted) {
-            mutateIsMountedMap((isMountedMap) => {
-              isMountedMap[field] = isMounted;
-            });
-          }
-        },
-
-        /** Marks a field as touched without affecting value or numberOfChanges */
-        touch: (field) => {
-          set((state) => {
-            const fields = state.fieldsMap as FieldsMap<T, D>;
-            if (!fields[field].meta.isTouched) {
-              fields[field].meta.isTouched = true;
-            }
-          });
-        },
-
-        /** Updates field value and triggers validation */
-        setValue: (field, value) => {
-          const state = get();
-          const currentFieldValue = state.fieldsMap[field].value;
-
-          // Skip if value hasn't changed
-          if (deepEqual(currentFieldValue, value)) {
-            return;
-          }
-
-          // Update field value and metadata
-          mutateFields((fields) => {
-            fields[field].value = value;
-            fields[field].meta.isTouched = true;
-            fields[field].meta.numberOfChanges++;
-          });
-
-          // Trigger validation after value change (reuse actions from state)
-          validateInternal(field, "change");
-
-          // Execute watchers for this field change
-          get().executeWatchers(field, "change");
-        },
-
-        /** Sets global default debounce for async validation */
-        setDebounceDelayMs: (debounceMs) => {
-          const current = get().debounceDelayMs;
-          const next = normalizeDebounceMs(debounceMs);
-          if (current !== next) {
-            set((state) => {
-              state.debounceDelayMs = next;
-            });
-          }
-        },
-
-        /** Submits specified fields (or all fields if none specified) */
-        submit: (fields) => {
-          runInWatcherTransaction(() => {
-            const state = get();
-            const fieldsToSubmit = new Set(
-              fields ?? getFieldNames(state.fieldsMap),
-            );
-
-            // Update submission metadata and trigger validation for each field
-            for (const field of fieldsToSubmit) {
-              // Skip unmounted fields
-              if (!state.isMountedMap[field]) {
-                continue;
-              }
-              mutateFields((fields) => {
-                fields[field].meta.numberOfSubmissions++;
-              });
-
-              validateInternal(field, "submit");
-
-              // Execute watchers for this submit action
-              get().executeWatchers(field, "submit");
-              if (watcherTransaction.bailOut) {
-                break;
-              }
-            }
-          });
-        },
-
-        // ======================================================================
-        // VALIDATION TRIGGER ACTIONS
-        // ======================================================================
-
-        /** Public validate action: delegates to the internal orchestrator and runs watchers */
-        validate: (field, action) => {
-          const state = get();
-          // Skip unmounted fields
-          if (!state.isMountedMap[field]) {
-            return;
-          }
-          validateInternal(field, action);
-
-          // Execute watchers for this validation action
-          get().executeWatchers(field, action);
-        },
-
-        abortValidation: (field) => {
-          cleanupValidation(field);
-          const currentState = get().fieldsMap[field].validationState;
-
-          // Only update if not already pending
-          if (currentState.type !== "pending") {
-            mutateFields((fields) => {
-              fields[field].validationState = validation.pending();
-            });
-          }
-        },
-
-        setStandardSchemasMap: (field, standardSchema) => {
-          const currentSchema = get().standardSchemasMap[field];
-
-          // Only update if schema actually changed
-          if (currentSchema !== standardSchema) {
-            mutateStandardSchemas((standardSchemas) => {
-              standardSchemas[field] = standardSchema;
-            });
-          }
-        },
-
-        // ======================================================================
-        // GETTER ACTIONS
-        // ======================================================================
-
-        /** Gets field data with mounted status */
-        getField: (field) => {
-          const state = get();
-          const targetField = state.fieldsMap[field];
-          return {
-            ...targetField,
-            isMounted: state.isMountedMap[field],
-          };
-        },
-
-        // ======================================================================
-        // STORE-LOCAL WATCHER HELPER FUNCTIONS
-        // ======================================================================
-
-        /** Registers watchers for a field */
-        registerWatchers: <K extends keyof T>(
-          targetField: K,
-          watchFields: WatchFieldsConfig<T, K, D>,
-        ) => {
-          // Remove existing watchers for this target field first
-          for (const [key, registrations] of watchersMap.entries()) {
-            const filtered = registrations.filter(
-              (reg) => reg.targetField !== targetField,
-            );
-            if (filtered.length === 0) {
-              watchersMap.delete(key);
-            } else {
-              watchersMap.set(key, filtered);
-            }
-          }
-
-          // Register new watchers for all actions
-          for (const watchedField of Object.keys(watchFields) as Exclude<
-            keyof T,
-            K
-          >[]) {
-            const callback = watchFields[watchedField];
-            if (!callback) {
-              continue;
-            }
-            for (const action of ACTIONS) {
-              const watchKey = `${watchedField as string}:${action}`;
-              const existing = watchersMap.get(watchKey) ?? [];
-
-              existing.push({
-                targetField,
-                watchedField,
-                execute: (action, getState, validateInternal) => {
-                  const state = getState();
-                  const watchedFieldData = state.fieldsMap[watchedField];
-                  const currentFieldData = state.fieldsMap[targetField];
-
-                  const formApi = {
-                    validate: (field: keyof T) => {
-                      validateInternal(field, action);
-                    },
-                    setValue: <K extends keyof T>(field: K, value: T[K]) => {
-                      state.setValue(field, value);
-                    },
-                    getField: <K extends keyof T>(field: K) =>
-                      state.getField(field),
-                    reset: (field: keyof T) => {
-                      const defaultValue = state.defaultValues[field];
-                      state.setValue(field, defaultValue);
-                    },
-                    touch: (field: keyof T) => {
-                      state.touch(field);
-                    },
-                  };
-
-                  // Call the callback with properly typed arguments
-                  callback({
-                    action,
-                    watchedValue: watchedFieldData.value,
-                    watchedField: watchedFieldData,
-                    currentField: currentFieldData,
-                    formApi,
-                  });
-                },
-              });
-
-              watchersMap.set(watchKey, existing);
-            }
-          }
-        },
-
-        /** Unregisters all watchers for a field */
-        unregisterWatchers: (targetField: keyof T) => {
-          for (const [key, registrations] of watchersMap.entries()) {
-            const filtered = registrations.filter(
-              (reg) => reg.targetField !== targetField,
-            );
-            if (filtered.length === 0) {
-              watchersMap.delete(key);
-            } else {
-              watchersMap.set(key, filtered);
-            }
-          }
-        },
-
-        /** Executes watchers for a watched field and action with loop protection */
-        executeWatchers: (watchedField: keyof T, action: Action) => {
-          runInWatcherTransaction(() => {
-            const watchKey = `${String(watchedField)}:${action}`;
-            const watchers = watchersMap.get(watchKey) ?? [];
-
-            for (const watcher of watchers) {
-              // Early bailout if limit already reached in this transaction
-              if (watcherTransaction.bailOut) {
-                break;
-              }
-              // Edge key prevents running the same watched->target pair repeatedly
-              const edgeKey = makeEdgeKey(
-                watchedField,
-                watcher.targetField,
-                action,
-              );
-
-              if (watcherTransaction.visitedEdges.has(edgeKey)) {
-                continue;
-              }
-
-              if (watcherTransaction.steps >= watcherTransaction.maxSteps) {
-                // Hard stop to avoid unbounded loops
-                watcherTransaction.bailOut = true;
-                console.warn(
-                  "Watcher chain exceeded max steps; breaking to avoid a feedback loop",
-                  {
-                    maxSteps: watcherTransaction.maxSteps,
-                    steps: watcherTransaction.steps,
-                    watchKey,
-                    edgeKey,
-                    action,
-                    watchedField: String(watchedField),
-                    targetField: String(watcher.targetField),
-                  },
-                );
-                break;
-              }
-
-              watcherTransaction.visitedEdges.add(edgeKey);
-              watcherTransaction.steps += 1;
-              watcher.execute(action, get, validateInternal);
-            }
-          });
-        },
-      };
-    }),
+> = Prettify<
+  {
+    name: K;
+  } & (
+    | SyncOnlyFieldOptionsExtension<T, K, D>
+    | AsyncOnlyFieldOptionsExtension<T, K, D>
+    | SyncAsyncFieldOptionsExtension<T, K, D>
+    | NoValidationFieldOptionsExtension
+  )
+>;
+
+// =====================================
+// Async Flow Helpers
+// =====================================
+
+function shouldSkipAutoValidation<V>(
+  running: RunningValidation<V> | undefined,
+  currentValue: V,
+  lastValue: V | undefined,
+  lastChanges: number | undefined,
+  currentChanges: number,
+): boolean {
+  if (running) {
+    return deepEqual(running.stateSnapshot, currentValue);
+  }
+  return (
+    lastValue !== undefined &&
+    deepEqual(lastValue, currentValue) &&
+    lastChanges !== undefined &&
+    lastChanges === currentChanges
   );
-
-  return store;
 }
 
-// ============================================================================
-// CONTEXT
-// ============================================================================
+function skip(): ValidationFlowSkip {
+  return { type: "async", strategy: "skip" } as ValidationFlowSkip;
+}
 
-type GenericStoreApi = StoreApi<Store<DefaultValues> & Actions<DefaultValues>>;
-const FormContext = createContext<GenericStoreApi | null>(null);
+function auto(debounceMs?: number): ValidationFlowAuto {
+  return {
+    type: "async",
+    strategy: "auto",
+    debounceMs,
+  } as ValidationFlowAuto;
+}
 
-// ============================================================================
-// COMPONENTS
-// ============================================================================
+function force(debounceMs?: number): ValidationFlowForce {
+  return {
+    type: "async",
+    strategy: "force",
+    debounceMs,
+  } as ValidationFlowForce;
+}
 
-/**
- * Form provider component that provides the form store to child components
- */
-function FormProvider({
+function normalizeFieldOptions<T extends DefaultValues, K extends keyof T, D>(
+  name: K,
+  opts: UseFieldOptions<T, K, D>,
+): InternalFieldOptions<T, K, D> {
+  const triggersSelf = new Set<Action>(opts.on?.self ?? ACTIONS);
+  const from = new Map<Exclude<keyof T, K>, Set<Action>>();
+  if (opts.on?.from) {
+    for (const key of Object.keys(opts.on.from) as Exclude<keyof T, K>[]) {
+      const val = opts.on.from[key];
+      const actions = new Set<Action>(
+        typeof val === "boolean" ? ACTIONS : (val ?? []),
+      );
+      from.set(key, actions);
+    }
+  }
+  return {
+    name: name,
+    standardSchema: opts.standardSchema,
+    debounceMs: opts.debounceMs,
+    respond: opts.respond as (
+      ctx: RespondContext<T, K, D> | RespondContextSync<T, K, D>,
+    ) => FinalFieldState<D> | ValidationFlow | void,
+    respondAsync: opts.respondAsync as (
+      ctx: RespondAsyncContext<T, K, D>,
+    ) => Promise<FinalFieldState<D>>,
+    triggers: { self: triggersSelf, from },
+  } satisfies InternalFieldOptions<T, K, D>;
+}
+
+const StoreContext = createContext<unknown>(null);
+
+// =====================================
+// Provider Component
+// =====================================
+
+function FormProvider<T extends DefaultValues, D = unknown>({
   children,
   formStore,
 }: Readonly<{
   children: React.ReactNode;
-  formStore: GenericStoreApi;
+  formStore: FormStore<T, D>;
 }>) {
-  return <FormContext value={formStore}>{children}</FormContext>;
+  return <StoreContext value={formStore}>{children}</StoreContext>;
 }
 
-/**
- * Field component that renders a field using the provided children prop
- */
-function Field<T extends DefaultValues, K extends keyof T, D = unknown>(
-  props: FieldProps<T, K, D>,
-): React.ReactNode {
-  const fieldApi = useField<T, K, D>(props);
+// =====================================
+// Helper Functions
+// =====================================
 
-  return props.children(fieldApi);
+function invariant(condition: unknown, message: string): asserts condition {
+  if (!condition) {
+    throw new Error(message);
+  }
 }
 
-// ============================================================================
-// HOOKS
-// ============================================================================
+// =====================================
+// Store Implementation
+// =====================================
 
-function useFieldDependencies<
-  T extends DefaultValues,
-  K extends (keyof T)[],
-  D = unknown,
->(dependencies?: K): FieldDependenciesMap<T, K, D> {
-  const formStore = use(FormContext) as StoreApi<
-    Store<T, D> & Actions<T, D>
-  > | null;
+function createFormStore<T extends DefaultValues, D = unknown>(
+  options: UseFormOptions<T>,
+): FormStore<T, D> {
+  const { defaultValues } = options;
 
-  if (!formStore) {
-    throw new Error("FormProvider is not found");
+  const defaultDebounceMs = normalizeDebounceMs(
+    options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
+  );
+
+  // -- Validation constructors
+  function valid(props?: { details?: D }): FieldStateValid<D> {
+    return { type: "valid", details: props?.details } as FieldStateValid<D>;
   }
 
-  const deduplicatedDependencies = useMemo(
-    () => dedupePrimitiveArray(dependencies ?? []),
-    [dependencies],
-  );
-
-  const { fieldsMap, isMountedMap } = useStore(
-    formStore,
-    useShallow((state: Store<T, D>) => ({
-      fieldsMap: state.fieldsMap,
-      isMountedMap: state.isMountedMap,
-    })),
-  );
-
-  return useMemo(
-    () =>
-      Object.fromEntries(
-        deduplicatedDependencies.map((dependency) => [
-          dependency,
-          {
-            ...fieldsMap[dependency],
-            isMounted: isMountedMap[dependency],
-          },
-        ]),
-      ) as FieldDependenciesMap<T, K, D>,
-    [deduplicatedDependencies, fieldsMap, isMountedMap],
-  );
-}
-
-/**
- * Hook to access and manage a specific form field
- */
-function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
-  options: UseFieldOptions<T, K, D>,
-): FieldApi<T, K, D> {
-  const formStore = use(FormContext) as StoreApi<
-    Store<T, D> & Actions<T, D>
-  > | null;
-
-  if (!formStore) {
-    throw new Error("FormProvider is not found");
+  function invalid(props?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }): FieldStateInvalid<D> {
+    return {
+      type: "invalid",
+      issues: props?.issues ?? [],
+      details: props?.details,
+    } as FieldStateInvalid<D>;
   }
 
-  const field = useStore(
-    formStore,
-    useShallow((state: Store<T, D>) => state.fieldsMap[options.name]),
-  );
+  function warning(props?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }): FieldStateWarning<D> {
+    return {
+      type: "warning",
+      issues: props?.issues ?? [],
+      details: props?.details,
+    } as FieldStateWarning<D>;
+  }
 
-  const {
-    setValue,
-    submit,
-    setValidatorsMap,
-    validate,
-    setStandardSchemasMap,
-    setIsMountedMap,
-    abortValidation,
-    getField,
-    registerWatchers,
-    unregisterWatchers,
-  } = useStore(
-    formStore,
-    useShallow((state: Store<T, D> & Actions<T, D>) => ({
-      setValue: state.setValue,
-      submit: state.submit,
-      setValidatorsMap: state.setValidatorsMap,
-      validate: state.validate,
-      setStandardSchemasMap: state.setStandardSchemasMap,
-      setIsMountedMap: state.setIsMountedMap,
-      abortValidation: state.abortValidation,
-      getField: state.getField,
-      registerWatchers: state.registerWatchers,
-      unregisterWatchers: state.unregisterWatchers,
-    })),
-  );
+  function idle(props?: { details?: D }): FieldStateIdle<D> {
+    return { type: "idle", details: props?.details } as FieldStateIdle<D>;
+  }
 
-  // Track if watchers were registered for the current field name to avoid redundant unregister calls
-  const watchersRegisteredForNameRef = useRef<keyof T | null>(null);
+  function waiting(props?: { details?: D }): FieldStateWaiting<D> {
+    return { type: "waiting", details: props?.details } as FieldStateWaiting<D>;
+  }
 
-  useIsomorphicEffect(() => {
-    setValidatorsMap(options.name, {
-      validator: options.validator,
-      asyncValidator: options.asyncValidator,
-      debounceMs: options.debounceMs,
+  function checking(props?: { details?: D }): FieldStateChecking<D> {
+    return {
+      type: "checking",
+      details: props?.details,
+    } as FieldStateChecking<D>;
+  }
+
+  // -- Helper bundles exposed to user callbacks
+  const validationHelperAsync = {
+    idle,
+    invalid,
+    valid,
+    warning,
+    async: { auto, force, skip },
+  } satisfies ValidationHelperAsync<D>;
+
+  const validationHelperSync = {
+    idle,
+    invalid,
+    valid,
+    warning,
+  } satisfies ValidationHelperSync<D>;
+
+  const internalValidationHelper = {
+    checking,
+    waiting,
+  } satisfies InternalValidationHelper<D>;
+
+  const asyncValidationHelper = {
+    idle,
+    invalid,
+    valid,
+    warning,
+  } satisfies AsyncValidationHelper<D>;
+
+  // -- Form state containers
+  const fieldsMap: FieldMap<T, D> = new Map();
+
+  const defaultValuesEntries = Object.entries(defaultValues) as [
+    key: keyof T,
+    value: T[keyof T],
+  ][];
+
+  for (const [key, value] of defaultValuesEntries) {
+    fieldsMap.set(key, {
+      value: signal<T[keyof T]>(value),
+      meta: {
+        isTouched: signal(false),
+        numberOfChanges: signal(0),
+        numberOfSubmissions: signal(0),
+      },
+      validationState: signal<FieldState<D>>(validationHelperSync.idle()),
     });
-    setStandardSchemasMap(options.name, options.standardSchema);
+  }
 
-    // Register watchers if provided
-    if (options.watchFields) {
-      registerWatchers(options.name, options.watchFields);
-      watchersRegisteredForNameRef.current = options.name;
-    } else {
-      if (watchersRegisteredForNameRef.current === options.name) {
-        unregisterWatchers(options.name);
-        watchersRegisteredForNameRef.current = null;
+  const mountedFields = new Set<keyof T>();
+
+  const fieldOptions = new Map<keyof T, unknown>();
+
+  function getFieldOptions<K extends keyof T>(
+    name: K,
+  ): InternalFieldOptions<T, K, D> | undefined {
+    return fieldOptions.get(name) as InternalFieldOptions<T, K, D> | undefined;
+  }
+
+  const reactions = new Map<string, Set<keyof T>>();
+  const targetToWatchKeys = new Map<keyof T, Set<string>>();
+  const runningValidations = new Map<keyof T, RunningValidation<T[keyof T]>>();
+  const lastValidatedValue = new Map<keyof T, T[keyof T]>();
+  const lastValidatedChanges = new Map<keyof T, number>();
+  const validationIds = new Map<keyof T, number>();
+
+  const watcherMaxSteps = normalizeNumber(options.watcherMaxSteps, {
+    fallback: DEFAULT_WATCHER_MAX_STEPS,
+    min: 1,
+    integer: "floor",
+  });
+
+  function getRunningValidation<K extends keyof T>(
+    field: K,
+  ): RunningValidation<T[K]> | undefined {
+    return runningValidations.get(field) as RunningValidation<T[K]> | undefined;
+  }
+
+  function setRunningValidation<K extends keyof T>(
+    field: K,
+    value: RunningValidation<T[K]>,
+  ): void {
+    runningValidations.set(field, value as RunningValidation<T[keyof T]>);
+  }
+
+  const watcherTransaction = {
+    active: false,
+    depth: 0,
+    visited: new Set<string>(),
+    steps: 0,
+    maxSteps: watcherMaxSteps,
+    bailOut: false,
+  };
+
+  // -- Internal getters/setters
+  function getFieldEntry<K extends keyof T>(name: K): FieldEntry<T[K], D> {
+    const entry = fieldsMap.get(name);
+
+    invariant(entry, `Unknown field: ${String(name)}`);
+
+    return entry as unknown as FieldEntry<T[K], D>;
+  }
+
+  // -- Dispatch transaction wrapper
+  function runInDispatchTransaction(fn: () => void) {
+    const isRoot = watcherTransaction.depth === 0;
+    watcherTransaction.depth += 1;
+    if (isRoot) {
+      watcherTransaction.active = true;
+      watcherTransaction.visited.clear();
+      watcherTransaction.steps = 0;
+      watcherTransaction.bailOut = false;
+    }
+    try {
+      fn();
+    } finally {
+      watcherTransaction.depth -= 1;
+      if (watcherTransaction.depth === 0) {
+        watcherTransaction.active = false;
+        watcherTransaction.visited.clear();
+        watcherTransaction.steps = 0;
+        watcherTransaction.bailOut = false;
       }
     }
-  }, [
-    options.asyncValidator,
-    options.debounceMs,
-    options.name,
-    options.standardSchema,
-    options.validator,
-    options.watchFields,
-    registerWatchers,
-    setStandardSchemasMap,
-    setValidatorsMap,
-    unregisterWatchers,
-  ]);
+  }
+
+  // -- Validation lifecycle
+  function cleanupValidation(field: keyof T) {
+    const rv = getRunningValidation(field);
+    if (!rv) {
+      return;
+    }
+    if (rv.timeoutId) {
+      clearTimeout(rv.timeoutId);
+    }
+    if (rv.abortController) {
+      rv.abortController.abort();
+    }
+    runningValidations.delete(field);
+  }
+
+  function clearValidationTimeout(field: keyof T) {
+    const rv = getRunningValidation(field);
+    if (!rv) {
+      return;
+    }
+    rv.timeoutId = undefined;
+  }
+
+  function incrementValidationId(field: keyof T) {
+    const next = (validationIds.get(field) ?? 0) + 1;
+    validationIds.set(field, next);
+    return next;
+  }
+
+  function setFieldState(field: keyof T, state: FieldState<D>) {
+    getFieldEntry(field).validationState.setValue(state, deepEqual);
+  }
+
+  function setLastValidatedValue<K extends keyof T>(field: K, value: T[K]) {
+    lastValidatedValue.set(field, value);
+  }
+
+  function getLastValidatedValue<K extends keyof T>(
+    field: K,
+  ): T[K] | undefined {
+    return lastValidatedValue.get(field) as T[K] | undefined;
+  }
+
+  function scheduleValidation<K extends keyof T>(
+    field: K,
+    value: T[K],
+    debounceMs: number,
+    action: Action,
+    cause:
+      | { isSelf: true; field: K; action: Action }
+      | { isSelf: false; field: Exclude<keyof T, K>; action: Action },
+  ) {
+    cleanupValidation(field);
+    if (debounceMs === 0) {
+      runValidation(field, value, action, cause);
+      return;
+    }
+    const validationId = incrementValidationId(field);
+    setFieldState(field, internalValidationHelper.waiting());
+    const timeoutId = setTimeout(() => {
+      clearValidationTimeout(field);
+      runValidation(field, value, action, cause);
+    }, debounceMs);
+    setRunningValidation(field, {
+      stateSnapshot: value,
+      timeoutId,
+      validationId,
+    });
+  }
+
+  function runValidation<K extends keyof T>(
+    field: K,
+    value: T[K],
+    action: Action,
+    cause:
+      | { isSelf: true; field: K; action: Action }
+      | { isSelf: false; field: Exclude<keyof T, K>; action: Action },
+  ) {
+    cleanupValidation(field);
+    const opts = getFieldOptions(field);
+    if (!opts?.respondAsync) {
+      return;
+    }
+
+    const validationId = incrementValidationId(field);
+    const abortController = new AbortController();
+    const { signal } = abortController;
+
+    setRunningValidation(field, {
+      stateSnapshot: value,
+      abortController,
+      validationId,
+    });
+    setFieldState(field, internalValidationHelper.checking());
+    setLastValidatedValue(field, value);
+    lastValidatedChanges.set(
+      field,
+      getFieldEntry(field).meta.numberOfChanges.getValue(),
+    );
+
+    const currentFieldView = getFieldView(field);
+    const std = opts.standardSchema;
+
+    opts
+      .respondAsync({
+        action,
+        cause,
+        value,
+        current: currentFieldView,
+        meta: currentFieldView.meta,
+        validationState: currentFieldView.validationState,
+        signal,
+        helpers: {
+          validation: asyncValidationHelper,
+          validateWithStandardSchemaAsync: async () =>
+            std ? await standardValidateAsync(std, value) : undefined,
+        },
+        form: {
+          setValue,
+          reset,
+          touch,
+          submit,
+          getFieldView,
+        },
+      })
+      .then((result) => {
+        if (abortController.signal.aborted) {
+          return;
+        }
+        if (validationId !== validationIds.get(field)) {
+          return;
+        }
+        setFieldState(field, result);
+        cleanupValidation(field);
+      })
+      .catch((error: unknown) => {
+        if (abortController.signal.aborted) {
+          return;
+        }
+        if (validationId !== validationIds.get(field)) {
+          return;
+        }
+        setFieldState(
+          field,
+          validationHelperSync.invalid({
+            issues: [
+              {
+                message:
+                  error instanceof Error ? error.message : "Validation failed",
+              },
+            ],
+          }),
+        );
+        cleanupValidation(field);
+      });
+  }
+
+  function handleAsyncFlow<K extends keyof T>(
+    field: K,
+    flow: ValidationFlow,
+    action: Action,
+    cause:
+      | { isSelf: true; field: K; action: Action }
+      | { isSelf: false; field: Exclude<keyof T, K>; action: Action },
+  ) {
+    const opts = getFieldOptions(field);
+    if (!opts?.respondAsync) {
+      return;
+    }
+    switch (flow.strategy) {
+      case "skip": {
+        return;
+      }
+      case "auto": {
+        if (
+          shouldSkipAutoValidation(
+            getRunningValidation(field),
+            getFieldEntry(field).value.getValue(),
+            getLastValidatedValue(field),
+            lastValidatedChanges.get(field) ?? 0,
+            getFieldEntry(field).meta.numberOfChanges.getValue(),
+          )
+        ) {
+          return;
+        }
+        const value = getFieldEntry(field).value.getValue();
+        const debounceMs = normalizeDebounceMs(
+          flow.debounceMs ?? opts.debounceMs ?? defaultDebounceMs,
+        );
+        scheduleValidation(field, value, debounceMs, action, cause);
+        return;
+      }
+      case "force": {
+        const value = getFieldEntry(field).value.getValue();
+        const debounceMs = normalizeDebounceMs(
+          flow.debounceMs ?? opts.debounceMs ?? defaultDebounceMs,
+        );
+        scheduleValidation(field, value, debounceMs, action, cause);
+        return;
+      }
+    }
+  }
+
+  // -- Respond dispatch
+  function runRespond<K extends keyof T>(
+    target: K,
+    causeField: K | Exclude<keyof T, K>,
+    action: Action,
+  ) {
+    if (!mountedFields.has(target)) {
+      return;
+    }
+    const opts = getFieldOptions(target);
+    if (!opts) {
+      return;
+    }
+    // Early short-circuit when there is nothing to do
+    if (!opts.respond && !opts.respondAsync) {
+      return;
+    }
+    const causeForTarget = makeCauseForTarget<T, K>(target, causeField, action);
+
+    if (!opts.respond && opts.respondAsync) {
+      // No sync respond provided, but async path configured: force async
+      handleAsyncFlow(
+        target,
+        validationHelperAsync.async.force(),
+        action,
+        causeForTarget,
+      );
+      return;
+    }
+
+    const value = getFieldEntry(target).value.getValue();
+    const currentView = getFieldView(target);
+    const std = opts.standardSchema;
+
+    const result = opts.respond?.({
+      action,
+      cause: causeForTarget,
+      value: value,
+      current: currentView,
+      form: {
+        setValue,
+        reset,
+        touch,
+        submit,
+        getFieldView,
+      },
+      helpers: {
+        validation: opts.respondAsync
+          ? validationHelperAsync
+          : validationHelperSync,
+        validateWithStandardSchema: () =>
+          std ? standardValidate(std, value) : undefined,
+      },
+    });
+
+    const outcome = result ?? validationHelperAsync.async.skip();
+
+    if (outcome.type === "async") {
+      handleAsyncFlow(target, outcome, action, causeForTarget);
+    } else {
+      setFieldState(target, outcome);
+      cleanupValidation(target);
+    }
+  }
+
+  // -- Reaction graph and dispatch
+  function dispatch(watched: keyof T, action: Action) {
+    runInDispatchTransaction(() => {
+      const key = `${String(watched)}:${action}`;
+      const targets = reactions.get(key);
+      if (!targets) {
+        return;
+      }
+      for (const target of targets) {
+        if (watcherTransaction.bailOut) {
+          break;
+        }
+        const edge = makeEdgeKey(watched, target, action);
+        const isSelfEdge = target === watched;
+        if (watcherTransaction.visited.has(edge)) {
+          continue;
+        }
+        // Do not let self-edges (watched === target) consume steps. They are
+        // typically no-ops in user handlers and counting them can cause
+        // premature bailouts in cyclic graphs.
+        if (
+          !isSelfEdge &&
+          watcherTransaction.steps >= watcherTransaction.maxSteps
+        ) {
+          watcherTransaction.bailOut = true;
+
+          console.warn(
+            "Dispatch chain exceeded max steps; breaking to avoid a loop",
+            {
+              maxSteps: watcherTransaction.maxSteps,
+              steps: watcherTransaction.steps,
+              watched: String(watched),
+              target: String(target),
+              action,
+            },
+          );
+          break;
+        }
+        watcherTransaction.visited.add(edge);
+        if (!isSelfEdge) {
+          watcherTransaction.steps += 1;
+        }
+        runRespond(target, watched, action);
+      }
+    });
+  }
+
+  function clearPreviousReactionsFor(target: keyof T): Set<string> {
+    const previousKeys = targetToWatchKeys.get(target);
+    if (!previousKeys) {
+      return new Set<string>();
+    }
+    for (const key of previousKeys) {
+      const setForKey = reactions.get(key);
+      if (!setForKey) {
+        continue;
+      }
+      setForKey.delete(target);
+      if (setForKey.size === 0) {
+        reactions.delete(key);
+      }
+    }
+    previousKeys.clear();
+    return previousKeys;
+  }
+
+  function addReactions(
+    watched: keyof T,
+    actions: Set<Action>,
+    target: keyof T,
+    keysForTarget: Set<string>,
+  ) {
+    for (const action of actions) {
+      const key = `${String(watched)}:${action}`;
+      const setForKey = reactions.get(key) ?? new Set<keyof T>();
+      setForKey.add(target);
+      reactions.set(key, setForKey);
+      keysForTarget.add(key);
+    }
+  }
+
+  function registerReactionsFor<K extends keyof T>(
+    name: K,
+    internal: InternalFieldOptions<T, K, D>,
+  ) {
+    const keysForTarget = clearPreviousReactionsFor(name);
+
+    // Honor explicit empty trigger arrays by not falling back to ALL actions
+    addReactions(name, internal.triggers.self, name, keysForTarget);
+
+    for (const [watched, actions] of internal.triggers.from.entries()) {
+      // Honor explicit empty arrays for cross-field triggers as well
+      addReactions(watched, actions, name, keysForTarget);
+    }
+
+    targetToWatchKeys.set(name, keysForTarget);
+  }
+
+  function setValue<K extends keyof T>(
+    name: K,
+    value: T[K],
+    options?: {
+      markTouched?: boolean;
+      incrementChanges?: boolean;
+      dispatch?: boolean;
+    },
+  ) {
+    const markTouched = options?.markTouched ?? true;
+    const incrementChanges = options?.incrementChanges ?? true;
+    const shouldDispatch = options?.dispatch ?? true;
+
+    const entry = getFieldEntry(name);
+    const previousValue = entry.value.getValue();
+    const hasChanged = !deepEqual(previousValue, value);
+    if (hasChanged) {
+      entry.value.setValue(value, deepEqual);
+    }
+
+    if (markTouched) {
+      entry.meta.isTouched.setValue(true);
+    }
+
+    if (incrementChanges && hasChanged) {
+      entry.meta.numberOfChanges.setValue(
+        entry.meta.numberOfChanges.getValue() + 1,
+      );
+    }
+
+    if (shouldDispatch && hasChanged) {
+      dispatch(name, "change");
+    }
+  }
+  function reset(
+    name: keyof T,
+    options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
+  ) {
+    // Reset value to default without touching meta/counters by default
+    setValue(name, defaultValues[name], {
+      markTouched: false,
+      incrementChanges: false,
+      dispatch: options?.dispatch,
+    });
+
+    if (options?.meta) {
+      const entry = getFieldEntry(name);
+      entry.meta.isTouched.setValue(false);
+      entry.meta.numberOfChanges.setValue(0);
+      entry.meta.numberOfSubmissions.setValue(0);
+    }
+
+    if (options?.validation) {
+      setFieldState(name, validationHelperSync.idle());
+      cleanupValidation(name);
+    }
+  }
+  function touch(name: keyof T) {
+    getFieldEntry(name).meta.isTouched.setValue(true);
+  }
+  function submit(fields?: readonly (keyof T)[]) {
+    const toSubmit = new Set(
+      fields ?? (Object.keys(defaultValues) as (keyof T)[]),
+    );
+    runInDispatchTransaction(() => {
+      for (const f of toSubmit) {
+        if (!mountedFields.has(f)) {
+          continue;
+        }
+        const entry = getFieldEntry(f);
+        entry.meta.numberOfSubmissions.setValue(
+          entry.meta.numberOfSubmissions.getValue() + 1,
+        );
+        dispatch(f, "submit");
+        if (watcherTransaction.bailOut) {
+          break;
+        }
+      }
+    });
+  }
+
+  // -- Options helpers (extracted to reduce complexity)
+  function unregisterFieldOptions(name: keyof T) {
+    cleanupValidation(name);
+    clearPreviousReactionsFor(name);
+    targetToWatchKeys.delete(name);
+    fieldOptions.delete(name);
+  }
+
+  function settleIfAsyncDisabled<K extends keyof T>(
+    name: K,
+    internal: InternalFieldOptions<T, K, D>,
+  ) {
+    if (internal.respondAsync) {
+      return;
+    }
+    const currentState = getFieldEntry(name).validationState.getValue();
+    if (currentState.type !== "waiting" && currentState.type !== "checking") {
+      return;
+    }
+    cleanupValidation(name);
+    if (internal.respond) {
+      runRespond(name, name, "change");
+    } else {
+      setFieldState(name, validationHelperSync.idle());
+    }
+  }
+
+  // -- Options registration lifecycle
+  function setFieldOptions<K extends keyof T>(
+    name: K,
+    opts: UseFieldOptions<T, K, D> | undefined,
+  ) {
+    if (!opts) {
+      unregisterFieldOptions(name);
+      return;
+    }
+    const internal = normalizeFieldOptions(name, opts);
+    fieldOptions.set(name, internal);
+    registerReactionsFor(name, internal);
+    settleIfAsyncDisabled(name, internal);
+  }
+
+  function mount(name: keyof T) {
+    if (!mountedFields.has(name)) {
+      mountedFields.add(name);
+      dispatch(name, "mount");
+    }
+  }
+
+  function unmount(name: keyof T) {
+    if (mountedFields.has(name)) {
+      mountedFields.delete(name);
+    }
+    cleanupValidation(name);
+  }
+
+  function dispatchBlur(name: keyof T) {
+    dispatch(name, "blur");
+  }
+
+  function registerOptions<K extends keyof T>(
+    name: K,
+    options: UseFieldOptions<T, K, D>,
+  ) {
+    setFieldOptions(name, options);
+  }
+
+  function unregisterOptions(name: keyof T) {
+    setFieldOptions(name, undefined);
+  }
+
+  function getFieldView<K extends keyof T>(name: K): FieldView<T[K], D> {
+    const field = getFieldEntry(name);
+    return {
+      value: field.value.getValue(),
+      meta: {
+        isTouched: field.meta.isTouched.getValue(),
+        numberOfChanges: field.meta.numberOfChanges.getValue(),
+        numberOfSubmissions: field.meta.numberOfSubmissions.getValue(),
+      },
+      validationState: field.validationState.getValue(),
+      isMounted: mountedFields.has(name),
+    };
+  }
+
+  const store: FormStore<T, D> = {
+    formApi: {
+      getFieldView,
+    },
+    dispatchBlur,
+    registerOptions,
+    unregisterOptions,
+    getFieldEntry,
+    mount,
+    unmount,
+    setValue,
+    reset,
+    submit,
+  };
+
+  return store;
+}
+
+// =====================================
+// Hooks helpers
+// =====================================
+
+function defineFieldOptions<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+>(options: UseFieldOptions<T, K, D>): UseFieldOptions<T, K, D> {
+  return options;
+}
+
+// =====================================
+// Hooks
+// =====================================
+
+function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
+  options: UseFieldOptions<T, K, D>,
+): Prettify<UseFieldResult<T, K, D>> {
+  const store = use(StoreContext) as FormStore<T, D> | null;
+
+  invariant(store, "useField must be used within a FormProvider");
+
+  const { name, debounceMs, on, respond, respondAsync, standardSchema } =
+    options;
 
   useIsomorphicEffect(() => {
-    setIsMountedMap(options.name, true);
-    validate(options.name, "mount");
-
-    const fieldName = options.name;
+    store.registerOptions(name, {
+      name,
+      debounceMs,
+      respondAsync,
+      on,
+      respond,
+      standardSchema,
+    } as UseFieldOptions<T, K, D>);
 
     return () => {
-      setIsMountedMap(fieldName, false);
-      abortValidation(fieldName);
-      // Clear validators and schema for unmounted field to avoid stale work
-      setValidatorsMap(fieldName, undefined);
-      setStandardSchemasMap(fieldName, undefined);
-      unregisterWatchers(fieldName);
-      watchersRegisteredForNameRef.current = null;
+      store.unregisterOptions(name);
     };
-  }, [
-    options.name,
-    abortValidation,
-    setStandardSchemasMap,
-    setValidatorsMap,
-    setIsMountedMap,
-    unregisterWatchers,
-    validate,
-  ]);
+  }, [debounceMs, name, on, respond, respondAsync, standardSchema, store]);
 
-  // Create field handlers
+  useIsomorphicEffect(() => {
+    store.mount(name);
+
+    return () => {
+      store.unmount(name);
+    };
+  }, [name, store]);
+
+  const field = store.getFieldEntry(name);
+
+  const value = useSignal(field.value);
+  const isTouched = useSignal(field.meta.isTouched);
+  const numberOfChanges = useSignal(field.meta.numberOfChanges);
+  const numberOfSubmissions = useSignal(field.meta.numberOfSubmissions);
+  const validationState = useSignal(field.validationState);
+
   const handleChange = useCallback(
     (value: T[K]) => {
-      setValue(options.name, value);
+      store.setValue(name, value);
     },
-    [options.name, setValue],
+    [name, store],
   );
-
-  const handleSubmit = useCallback(() => {
-    submit([options.name]);
-  }, [options.name, submit]);
 
   const handleBlur = useCallback(() => {
-    validate(options.name, "blur");
-  }, [options.name, validate]);
+    store.dispatchBlur(name);
+  }, [name, store]);
 
-  // Create form API
-  const formApi = useMemo(
-    () => ({
-      submit,
-      getField,
-    }),
-    [submit, getField],
-  );
+  const formApi = useMemo(() => store.formApi, [store]);
 
   return {
-    name: options.name,
-    value: field.value,
-    meta: field.meta,
-    validationState: field.validationState,
+    name,
+    value,
+    meta: {
+      isTouched,
+      numberOfChanges,
+      numberOfSubmissions,
+    },
+    validationState,
     handleChange,
-    handleSubmit,
     handleBlur,
     formApi,
   };
 }
 
-/**
- * Main hook to create and manage a form
- */
 export function useForm<T extends DefaultValues, D = unknown>(
   options: UseFormOptions<T>,
 ): UseFormResult<T, D> {
-  const [formStore] = useState(() => createFormStoreMutative<T, D>(options));
+  const [formStore] = useState(() => createFormStore<T, D>(options));
 
-  // Sync default values when they change
-  useIsomorphicEffect(() => {
-    if (!deepEqual(options.defaultValues, formStore.getState().defaultValues)) {
-      formStore.getState().setDefaultValues(options.defaultValues);
-    }
-  }, [options.defaultValues, formStore]);
-
-  return {
-    Field,
-    formStore,
-    Form: (props: React.ComponentProps<"form">) => (
-      <FormProvider
-        formStore={
-          formStore as StoreApi<Store<DefaultValues> & Actions<DefaultValues>>
-        }
-      >
+  const Form = useCallback(
+    (props: React.ComponentProps<"form">) => (
+      <FormProvider formStore={formStore}>
         <form {...props} />
       </FormProvider>
     ),
+    [formStore],
+  );
+
+  const formApi = useMemo(() => formStore.formApi, [formStore]);
+
+  return {
+    formApi,
+    Form,
   };
 }
 
-/**
- * Factory function to create typed form hooks
- */
 export function createFormHook<
   T extends DefaultValues,
   D = unknown,
 >(): CreateFormHookResult<T, D> {
   return {
-    useForm,
+    defineFieldOptions,
     useField,
-    useFieldDependencies,
+    useForm,
   };
 }

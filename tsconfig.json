@@ -4,6 +4,8 @@
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" },
     { "path": "./tsconfig.lib.json" },
-    { "path": "./tsconfig.fake.json" }
+    { "path": "./tsconfig.fake.json" },
+    { "path": "./tsconfig.lib.test.json" },
+    { "path": "./tsconfig.playwright.json" }
   ]
 }

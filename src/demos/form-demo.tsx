@@ -1,0 +1,112 @@
+import { createFormHook } from "@lib/create-form-hook";
+import type { Branded } from "@/types/types";
+
+type Name = Branded<string, "name">;
+type Email = Branded<string, "email">;
+
+type NameForm = {
+  name: Name;
+  email: Email;
+};
+
+const { useField, useForm, defineFieldOptions } = createFormHook<NameForm>();
+
+export default function FormDemo() {
+  const { Form } = useForm({
+    defaultValues: {
+      name: "" as Name,
+      email: "" as Email,
+    },
+  });
+
+  return (
+    <Form className="mx-auto max-w-lg space-y-6">
+      <div className="space-y-4 p-6">
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold">Form Demo</h2>
+          <p className="mt-2 text-sm text-gray-600">
+            Simple form with name and email fields
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <NameField />
+          <EmailField />
+        </div>
+
+        <div className="pt-4">
+          <button
+            type="submit"
+            className="w-full rounded-md border-2 border-blue-300 bg-blue-500 px-4 py-2 font-medium text-white hover:bg-blue-600 focus:outline-none"
+          >
+            Create Account
+          </button>
+        </div>
+      </div>
+    </Form>
+  );
+}
+
+const nameFieldOptions = defineFieldOptions({
+  name: "name",
+  respond: (props) => {
+    console.log(props);
+  },
+});
+
+const emailFieldOptions = defineFieldOptions({
+  name: "email",
+  respond: (props) => {
+    console.log(props);
+  },
+});
+
+function NameField() {
+  const field = useField(nameFieldOptions);
+
+  return (
+    <label className="flex flex-col gap-2">
+      <span className="px-2 text-sm font-medium">Name</span>
+      <div className="relative">
+        <input
+          type="text"
+          name={field.name}
+          value={field.value}
+          onChange={(e) => {
+            field.handleChange(e.target.value as Name);
+          }}
+          onBlur={field.handleBlur}
+          className={
+            "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none"
+          }
+          placeholder="Enter your name..."
+        />
+      </div>
+    </label>
+  );
+}
+
+function EmailField() {
+  const field = useField(emailFieldOptions);
+
+  return (
+    <label className="flex flex-col gap-2">
+      <span className="px-2 text-sm font-medium">Email</span>
+      <div className="relative">
+        <input
+          type="email"
+          name={field.name}
+          value={field.value}
+          onChange={(e) => {
+            field.handleChange(e.target.value as Email);
+          }}
+          onBlur={field.handleBlur}
+          className={
+            "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none"
+          }
+          placeholder="Enter your email..."
+        />
+      </div>
+    </label>
+  );
+}

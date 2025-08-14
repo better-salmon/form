@@ -1,49 +1,25 @@
 import "@/index.css";
-import { useEffect, useState } from "react";
-import { WatcherDemo } from "@/demos/watcher-demo";
-import { WatcherLoopBugDemo } from "@/demos/watcher-loop-bug-demo";
-import { WatcherCascadesDemo } from "@/demos/watcher-cascades-demo";
-import { PasswordDemo } from "@/demos/password-demo";
-import { WatcherAsyncDemo } from "@/demos/watcher-async-demo";
-import { ContactDemo } from "@/demos/contact-demo";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { cn } from "@/utils/cn";
 
 const DEMOS = [
   {
-    id: "contact",
-    name: "Contact Demo",
-    component: ContactDemo,
-    description: "Simple name, email, and phone form",
+    id: "form-demo",
+    name: "Form Demo",
+    component: lazy(() => import("@/demos/form-demo")),
+    description: "Simple form with name and email fields",
   },
   {
-    id: "watcher",
-    name: "Watcher Demo",
-    component: WatcherDemo,
-    description: "Field dependencies and watchers",
+    id: "sync-respond-demo",
+    name: "Sync Respond Demo",
+    component: lazy(() => import("@/demos/sync-respond-demo")),
+    description: "Simple form with password and confirm password fields",
   },
   {
-    id: "watcher-loop-bug",
-    name: "Watcher Loop Bug",
-    component: WatcherLoopBugDemo,
-    description: "Intentional feedback loop with guards and logging",
-  },
-  {
-    id: "watcher-cascades",
-    name: "Watcher Cascades",
-    component: WatcherCascadesDemo,
-    description: "Legit cascades: chain and diamond propagation",
-  },
-  {
-    id: "watcher-async",
-    name: "Watcher Async",
-    component: WatcherAsyncDemo,
-    description: "Watcher schedules async work and cancels stale runs",
-  },
-  {
-    id: "password",
-    name: "Password Demo",
-    component: PasswordDemo,
-    description: "Password validation and confirmation",
+    id: "async-sync-toggle-demo",
+    name: "Async → Sync Toggle",
+    component: lazy(() => import("@/demos/async-sync-toggle-demo")),
+    description: "Toggle a field from async (debounced) to sync while waiting",
   },
 ] as const;
 
@@ -54,7 +30,7 @@ type SidebarState = "show" | "collapsed";
 function getUrlParams() {
   const params = new URLSearchParams(globalThis.location.search);
   return {
-    demo: (params.get("demo") ?? "contact") as DemoNames,
+    demo: (params.get("demo") ?? "form-demo") as DemoNames,
     sidebar: (params.get("sidebar") ?? "show") as SidebarState,
   };
 }
@@ -62,7 +38,7 @@ function getUrlParams() {
 function updateUrlParams(demo: DemoNames, sidebarCollapsed: SidebarState) {
   const searchParams = new URLSearchParams();
 
-  if (demo !== "contact") {
+  if (demo !== "form-demo") {
     searchParams.set("demo", demo);
   }
 
@@ -90,8 +66,9 @@ function App() {
     updateUrlParams(activeDemo, sidebarState);
   }, [activeDemo, sidebarState]);
 
-  const ActiveComponent =
-    DEMOS.find((demo) => demo.id === activeDemo)?.component ?? ContactDemo;
+  const ActiveComponent = DEMOS.find(
+    (demo) => demo.id === activeDemo,
+  )?.component;
 
   const activeDemoInfo = DEMOS.find((demo) => demo.id === activeDemo);
 
@@ -188,7 +165,15 @@ function App() {
         <div className="flex-1 overflow-auto">
           <div className="p-6 lg:p-8">
             <div className="mx-auto max-w-4xl">
-              <ActiveComponent />
+              {ActiveComponent && (
+                <Suspense
+                  fallback={
+                    <div className="text-sm text-gray-500">Loading…</div>
+                  }
+                >
+                  <ActiveComponent />
+                </Suspense>
+              )}
             </div>
           </div>
         </div>
