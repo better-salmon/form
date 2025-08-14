@@ -1,5 +1,0 @@
----
-alwaysApply: true
----
-
-When working with third-party libraries, dependencies, or packages use context7 MCP server to get the latest documentation. Always prioritize context7 documentation over cached knowledge when dealing with npm ecosystem.
