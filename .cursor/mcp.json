@@ -12,6 +12,10 @@
     "playwright": {
       "command": "pnpm dlx",
       "args": ["@playwright/mcp@latest"]
+    },
+    "git": {
+      "command": "uvx",
+      "args": ["mcp-server-git"]
     }
   }
 }

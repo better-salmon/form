@@ -1,5 +1,11 @@
 # Form Hook
 
-This is an experimental form hook library that was inspired by [TanStack Form](https://tanstack.com/form/latest).
+Experimental, signals-powered form hook library for React 19, inspired by [TanStack Form](https://tanstack.com/form/latest).
 
-For now it uses `zustand` and `zustand-mutative` for state management.
+Zero runtime dependencies.
+
+- Very strong typing
+- Sync and async validation (debounced, cancelable)
+- Cross-field triggers and submission/touched metadata
+- Standard Schema compatible
+- Minimal API: `useSignalForm`, `useSignalField`
