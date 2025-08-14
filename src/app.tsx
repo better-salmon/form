@@ -1,49 +1,19 @@
 import "@/index.css";
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { cn } from "@/utils/cn";
-import { SignalFormDemo } from "@/demos/signal-form-demo";
-import { UnifiedSignalsDemo } from "@/demos/unified-signals-demo";
-import { SignalsWatcherCascadesDemo } from "@/demos/signal-watcher-cascades-demo";
-import { SignalsWatcherLoopBugDemo } from "@/demos/signal-watcher-loop-bug-demo";
-import { SignalsLoopNoGuardsDemo } from "@/demos/signal-loop-no-guards-demo";
-import { SignalsFourCycleWorkingDemo } from "@/demos/signal-4cycle-working-demo";
 
 const DEMOS = [
   {
-    id: "signal-form",
+    id: "form-demo",
     name: "Signal Form Demo",
-    component: SignalFormDemo,
+    component: lazy(() => import("@/demos/form-demo")),
     description: "Simple form with name and email fields",
   },
   {
-    id: "unified-signals",
-    name: "Unified Signals Demo",
-    component: UnifiedSignalsDemo,
-    description: "Unified handler + async + triggers on signals store",
-  },
-  {
-    id: "signals-watcher-cascades",
-    name: "Watcher Cascades (Signals)",
-    component: SignalsWatcherCascadesDemo,
-    description: "Cascades using signals-based API",
-  },
-  {
-    id: "signals-watcher-loop-bug",
-    name: "Watcher Loop Bug (Signals)",
-    component: SignalsWatcherLoopBugDemo,
-    description: "Intentional feedback loop using signals + guards",
-  },
-  {
-    id: "signals-loop-no-guards",
-    name: "Signals Loop (No Guards)",
-    component: SignalsLoopNoGuardsDemo,
-    description: "Two-field self-propagating loop; should be contained",
-  },
-  {
-    id: "signals-4cycle",
-    name: "Signals 4-Field Cycle",
-    component: SignalsFourCycleWorkingDemo,
-    description: "Four-field cycle with low max steps to provoke bail",
+    id: "sync-respond-demo",
+    name: "Sync Respond Demo",
+    component: lazy(() => import("@/demos/sync-respond-demo")),
+    description: "Simple form with password and confirm password fields",
   },
 ] as const;
 
@@ -54,7 +24,7 @@ type SidebarState = "show" | "collapsed";
 function getUrlParams() {
   const params = new URLSearchParams(globalThis.location.search);
   return {
-    demo: (params.get("demo") ?? "contact") as DemoNames,
+    demo: (params.get("demo") ?? "form-demo") as DemoNames,
     sidebar: (params.get("sidebar") ?? "show") as SidebarState,
   };
 }
@@ -62,7 +32,7 @@ function getUrlParams() {
 function updateUrlParams(demo: DemoNames, sidebarCollapsed: SidebarState) {
   const searchParams = new URLSearchParams();
 
-  if (demo !== "signal-form") {
+  if (demo !== "form-demo") {
     searchParams.set("demo", demo);
   }
 
@@ -90,8 +60,9 @@ function App() {
     updateUrlParams(activeDemo, sidebarState);
   }, [activeDemo, sidebarState]);
 
-  const ActiveComponent =
-    DEMOS.find((demo) => demo.id === activeDemo)?.component ?? SignalFormDemo;
+  const ActiveComponent = DEMOS.find(
+    (demo) => demo.id === activeDemo,
+  )?.component;
 
   const activeDemoInfo = DEMOS.find((demo) => demo.id === activeDemo);
 
@@ -188,7 +159,15 @@ function App() {
         <div className="flex-1 overflow-auto">
           <div className="p-6 lg:p-8">
             <div className="mx-auto max-w-4xl">
-              <ActiveComponent />
+              {ActiveComponent && (
+                <Suspense
+                  fallback={
+                    <div className="text-sm text-gray-500">Loading…</div>
+                  }
+                >
+                  <ActiveComponent />
+                </Suspense>
+              )}
             </div>
           </div>
         </div>

@@ -8,4 +8,4 @@ Zero runtime dependencies.
 - Sync and async validation (debounced, cancelable)
 - Cross-field triggers and submission/touched metadata
 - Standard Schema compatible
-- Minimal API: `useSignalForm`, `useSignalField`
+- Minimal API: `useForm`, `useField`

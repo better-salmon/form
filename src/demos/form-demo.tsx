@@ -1,4 +1,4 @@
-import { createSignalFormHook } from "@lib/create-form-hook";
+import { createFormHook } from "@lib/create-form-hook";
 import type { Branded } from "@/types/types";
 
 type Name = Branded<string, "name">;
@@ -9,10 +9,10 @@ type NameForm = {
   email: Email;
 };
 
-const { useSignalField, useSignalForm } = createSignalFormHook<NameForm>();
+const { useField, useForm } = createFormHook<NameForm>();
 
-export function SignalFormDemo() {
-  const { Form } = useSignalForm({
+export default function FormDemo() {
+  const { Form } = useForm({
     defaultValues: {
       name: "" as Name,
       email: "" as Email,
@@ -48,12 +48,11 @@ export function SignalFormDemo() {
 }
 
 function NameField() {
-  const field = useSignalField({
+  const field = useField({
     name: "name",
     respond: (props) => {
       console.log(props);
     },
-    on: { from: { email: ["change"] } },
   });
 
   return (
@@ -79,10 +78,10 @@ function NameField() {
 }
 
 function EmailField() {
-  const field = useSignalField({
+  const field = useField({
     name: "email",
-    respond: (ctx) => {
-      console.log(ctx);
+    respond: (props) => {
+      console.log(props);
     },
   });
 

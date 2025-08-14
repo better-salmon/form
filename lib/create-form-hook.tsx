@@ -9,6 +9,10 @@ import {
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { useIsomorphicEffect } from "@lib/use-isomorphic-effect";
 
+// =====================================
+// Domain Types and Constants
+// =====================================
+
 type Prettify<T> = {
   [K in keyof T]: T[K];
   // eslint-disable-next-line sonarjs/no-useless-intersection -- this is a common pattern for prettifying types
@@ -21,25 +25,51 @@ const DEFAULT_DEBOUNCE_MS = 500;
 
 type DefaultValues = Record<string, unknown>;
 
-type FieldStateValid<D = unknown> = { type: "valid"; details?: D };
+// Brand markers
+declare const FIELD_STATE_BRAND: unique symbol;
+declare const FLOW_CONTROL_BRAND: unique symbol;
+
+// =====================================
+// Field State Types
+// =====================================
+
+type FieldStateValid<D = unknown> = {
+  type: "valid";
+  details?: D;
+  readonly [FIELD_STATE_BRAND]: true;
+};
 
 type FieldStateInvalid<D = unknown> = {
   type: "invalid";
-  issues: readonly { message: string }[];
+  issues: readonly StandardSchemaV1.Issue[];
   details?: D;
+  readonly [FIELD_STATE_BRAND]: true;
 };
 
 type FieldStateWarning<D = unknown> = {
   type: "warning";
-  issues: readonly { message: string }[];
+  issues: readonly StandardSchemaV1.Issue[];
   details?: D;
+  readonly [FIELD_STATE_BRAND]: true;
 };
 
-type FieldStateWaiting<D = unknown> = { type: "waiting"; details?: D };
+type FieldStateWaiting<D = unknown> = {
+  type: "waiting";
+  details?: D;
+  readonly [FIELD_STATE_BRAND]: true;
+};
 
-type FieldStateChecking<D = unknown> = { type: "checking"; details?: D };
+type FieldStateChecking<D = unknown> = {
+  type: "checking";
+  details?: D;
+  readonly [FIELD_STATE_BRAND]: true;
+};
 
-type FieldStateIdle<D = unknown> = { type: "idle"; details?: D };
+type FieldStateIdle<D = unknown> = {
+  type: "idle";
+  details?: D;
+  readonly [FIELD_STATE_BRAND]: true;
+};
 
 export type FieldState<D = unknown> =
   | FieldStateValid<D>
@@ -55,22 +85,36 @@ export type FinalFieldState<D = unknown> =
   | FieldStateInvalid<D>
   | FieldStateWarning<D>;
 
-type ValidationFlowSkip = { type: "async"; strategy: "skip" };
+// =====================================
+// Validation Flow Types
+// =====================================
+
+type ValidationFlowSkip = {
+  type: "async";
+  strategy: "skip";
+  readonly [FLOW_CONTROL_BRAND]: true;
+};
 type ValidationFlowAuto = {
   type: "async";
   strategy: "auto";
   debounceMs?: number;
+  readonly [FLOW_CONTROL_BRAND]: true;
 };
 type ValidationFlowForce = {
   type: "async";
   strategy: "force";
   debounceMs?: number;
+  readonly [FLOW_CONTROL_BRAND]: true;
 };
 
 export type ValidationFlow =
   | ValidationFlowSkip
   | ValidationFlowAuto
   | ValidationFlowForce;
+
+// =====================================
+// Field View and Metadata
+// =====================================
 
 export type FieldMeta = {
   isTouched: boolean;
@@ -85,25 +129,157 @@ export type FieldView<T, D = unknown> = {
   isMounted: boolean;
 };
 
-export type ValidationFactory<D = unknown> = {
-  valid: (p?: { details?: D }) => FieldStateValid<D>;
-  invalid: (p?: {
-    issues?: readonly { message: string }[];
+export type ValidationHelper<D = unknown> = {
+  valid(p?: { details?: D }): FieldStateValid<D>;
+  invalid(p?: {
+    issues?: readonly StandardSchemaV1.Issue[];
     details?: D;
-  }) => FieldStateInvalid<D>;
-  warning: (p?: {
-    issues?: readonly { message: string }[];
+  }): FieldStateInvalid<D>;
+  warning(p?: {
+    issues?: readonly StandardSchemaV1.Issue[];
     details?: D;
-  }) => FieldStateWarning<D>;
-  idle: (p?: { details?: D }) => FieldStateIdle<D>;
-  waiting: (p?: { details?: D }) => FieldStateWaiting<D>;
-  checking: (p?: { details?: D }) => FieldStateChecking<D>;
+  }): FieldStateWarning<D>;
+  idle(p?: { details?: D }): FieldStateIdle<D>;
   async: {
-    skip: () => ValidationFlowSkip;
-    auto: (debounceMs?: number) => ValidationFlowAuto;
-    force: (debounceMs?: number) => ValidationFlowForce;
+    skip(): ValidationFlowSkip;
+    auto(debounceMs?: number): ValidationFlowAuto;
+    force(debounceMs?: number): ValidationFlowForce;
   };
 };
+
+type AsyncValidationHelper<D = unknown> = {
+  valid(p?: { details?: D }): FieldStateValid<D>;
+  invalid(p?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }): FieldStateInvalid<D>;
+  warning(p?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }): FieldStateWarning<D>;
+  idle(p?: { details?: D }): FieldStateIdle<D>;
+};
+
+// =====================================
+// Storage Types
+// =====================================
+
+type FieldEntry<V, D = unknown> = {
+  value: Signal<V>;
+  meta: {
+    isTouched: Signal<boolean>;
+    numberOfChanges: Signal<number>;
+    numberOfSubmissions: Signal<number>;
+  };
+  validationState: Signal<FieldState<D>>;
+};
+
+type FieldMap<T extends DefaultValues, D = unknown> = Map<
+  keyof T,
+  FieldEntry<T[keyof T], D>
+>;
+
+// =====================================
+// Internal Types
+// =====================================
+
+type RunningValidation<T> = {
+  stateSnapshot: T;
+  timeoutId?: ReturnType<typeof setTimeout>;
+  abortController?: AbortController;
+  validationId: number;
+};
+
+type FieldOptionsConfig<T extends DefaultValues, K extends keyof T, D> = {
+  standardSchema?: StandardSchemaV1<T[K]>;
+  debounceMs?: number;
+  respond?: UseFieldOptions<T, K, D>["respond"];
+  respondAsync?: UseFieldOptionsAsync<T, K, D>["respondAsync"];
+  on?: UseFieldOptions<T, K, D>["on"];
+};
+
+type InternalFieldOptions<T extends DefaultValues, K extends keyof T, D> = {
+  name: K;
+  standardSchema?: StandardSchemaV1<T[K]>;
+  debounceMs?: number;
+  respond?: (
+    ctx: RespondContext<T, K, D>,
+  ) => FinalFieldState<D> | ValidationFlow | void;
+  respondAsync?: (
+    ctx: RespondAsyncContext<T, K, D>,
+  ) => Promise<FinalFieldState<D>>;
+  triggers: {
+    self: Set<Action>;
+    from: Map<Exclude<keyof T, K>, Set<Action>>;
+  };
+};
+
+type InternalValidationHelper<D = unknown> = {
+  waiting: (p?: { details?: D }) => FieldStateWaiting<D>;
+  checking: (p?: { details?: D }) => FieldStateChecking<D>;
+};
+
+// =====================================
+// Store and Hook Types
+// =====================================
+
+type FormStore<T extends DefaultValues, D = unknown> = {
+  getField: <K extends keyof T>(name: K) => FieldEntry<T[K], D>;
+  mount: (name: keyof T) => void;
+  registerOptions: <K extends keyof T>(
+    name: K,
+    options: FieldOptionsConfig<T, K, D>,
+  ) => void;
+  unregisterOptions: (name: keyof T) => void;
+  unmount: (name: keyof T) => void;
+  setValue: (
+    name: keyof T,
+    value: T[keyof T],
+    options?: {
+      markTouched?: boolean;
+      incrementChanges?: boolean;
+      dispatch?: boolean;
+    },
+  ) => void;
+  dispatchBlur: (name: keyof T) => void;
+  submit: (fields?: readonly (keyof T)[]) => void;
+  revalidate: (name: keyof T, action?: Action) => void;
+  reset: (
+    name: keyof T,
+    options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
+  ) => void;
+};
+
+type UseFieldResult<T extends DefaultValues, K extends keyof T, D = unknown> = {
+  name: K;
+  value: T[K];
+  meta: FieldMeta;
+  validationState: FieldState<D>;
+  handleChange: (value: T[K]) => void;
+  handleBlur: () => void;
+};
+
+export type UseFormResult<T extends DefaultValues, D = unknown> = {
+  formStore: FormStore<T, D>;
+  Form: (props: React.ComponentProps<"form">) => React.ReactElement;
+};
+
+type UseFormOptions<T extends DefaultValues> = {
+  defaultValues: T;
+  debounceMs?: number;
+  watcherMaxSteps?: number;
+};
+
+type CreateFormHookResult<T extends DefaultValues, D = unknown> = {
+  useForm: (options: UseFormOptions<T>) => UseFormResult<T, D>;
+  useField: <K extends keyof T>(
+    options: UseFieldOptions<T, K, D>,
+  ) => Prettify<UseFieldResult<T, K, D>>;
+};
+
+// =====================================
+// Graph Utilities
+// =====================================
 
 function makeEdgeKey(
   watched: PropertyKey,
@@ -130,17 +306,9 @@ function makeCauseForTarget<T extends DefaultValues, K extends keyof T>(
   };
 }
 
-type FinalizeValidationFactory<D = unknown> = {
-  valid: (p?: { details?: D }) => FieldStateValid<D>;
-  invalid: (p?: {
-    issues?: readonly { message: string }[];
-    details?: D;
-  }) => FieldStateInvalid<D>;
-  warning: (p?: {
-    issues?: readonly { message: string }[];
-    details?: D;
-  }) => FieldStateWarning<D>;
-};
+// =====================================
+// Respond Contexts (sync/async)
+// =====================================
 
 export type RespondContext<
   T extends DefaultValues,
@@ -173,7 +341,7 @@ export type RespondContext<
     getField: <F extends keyof T>(name: F) => FieldView<T[F], D>;
   };
   helpers: {
-    validation: ValidationFactory<D>;
+    validation: ValidationHelper<D>;
     validateWithStandardSchema: () =>
       | readonly StandardSchemaV1.Issue[]
       | undefined;
@@ -195,7 +363,7 @@ type RespondAsyncContext<
   validationState: FieldState<D>;
   signal: AbortSignal;
   helpers: {
-    validation: FinalizeValidationFactory<D>;
+    validation: AsyncValidationHelper<D>;
     validateWithStandardSchemaAsync: () => Promise<
       readonly StandardSchemaV1.Issue[] | undefined
     >;
@@ -221,7 +389,11 @@ type RespondAsyncContext<
   };
 };
 
-export type UseFieldSignalOptionsSync<
+// =====================================
+// Public Options (sync/async) for useField
+// =====================================
+
+export type UseFieldOptionsSync<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
@@ -238,7 +410,7 @@ export type UseFieldSignalOptionsSync<
   respondAsync?: never;
 };
 
-export type UseFieldSignalOptionsAsync<
+export type UseFieldOptionsAsync<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
@@ -258,29 +430,18 @@ export type UseFieldSignalOptionsAsync<
   };
 };
 
-export type UseFieldSignalOptions<
+export type UseFieldOptions<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
-> = UseFieldSignalOptionsSync<T, K, D> | UseFieldSignalOptionsAsync<T, K, D>;
+> = UseFieldOptionsSync<T, K, D> | UseFieldOptionsAsync<T, K, D>;
 
-type FieldEntry<V, D = unknown> = {
-  value: Signal<V>;
-  meta: {
-    isTouched: Signal<boolean>;
-    numberOfChanges: Signal<number>;
-    numberOfSubmissions: Signal<number>;
-  };
-  validationState: Signal<FieldState<D>>;
-};
-
-type SignalFieldMap<T extends DefaultValues, D = unknown> = Map<
-  keyof T,
-  FieldEntry<T[keyof T], D>
->;
+// =====================================
+// Field View helpers
+// =====================================
 
 function getFieldViewFromMaps<T extends DefaultValues, D, F extends keyof T>(
-  fieldsMap: SignalFieldMap<T, D>,
+  fieldsMap: FieldMap<T, D>,
   mountedFields: Set<keyof T>,
   fieldName: F,
 ): FieldView<T[F], D> {
@@ -304,12 +465,9 @@ function getFieldViewFromMaps<T extends DefaultValues, D, F extends keyof T>(
   } satisfies FieldView<T[F], D>;
 }
 
-type RunningValidation<T> = {
-  stateSnapshot: T;
-  timeoutId?: ReturnType<typeof setTimeout>;
-  abortController?: AbortController;
-  validationId: number;
-};
+// =====================================
+// Async Flow Helpers
+// =====================================
 
 function shouldSkipAutoValidation<V>(
   running: RunningValidation<V> | undefined,
@@ -329,29 +487,25 @@ function shouldSkipAutoValidation<V>(
   );
 }
 
-type FieldOptionsConfig<T extends DefaultValues, K extends keyof T, D> = {
-  standardSchema?: StandardSchemaV1<T[K]>;
-  debounceMs?: number;
-  respond?: UseFieldSignalOptions<T, K, D>["respond"];
-  respondAsync?: UseFieldSignalOptionsAsync<T, K, D>["respondAsync"];
-  on?: UseFieldSignalOptions<T, K, D>["on"];
-};
+function skip(): ValidationFlowSkip {
+  return { type: "async", strategy: "skip" } as ValidationFlowSkip;
+}
 
-type InternalFieldOptions<T extends DefaultValues, K extends keyof T, D> = {
-  name: K;
-  standardSchema?: StandardSchemaV1<T[K]>;
-  debounceMs?: number;
-  respond?: (
-    ctx: RespondContext<T, K, D>,
-  ) => FinalFieldState<D> | ValidationFlow | void;
-  respondAsync?: (
-    ctx: RespondAsyncContext<T, K, D>,
-  ) => Promise<FinalFieldState<D>>;
-  triggers: {
-    self: Set<Action>;
-    from: Map<Exclude<keyof T, K>, Set<Action>>;
-  };
-};
+function auto(debounceMs?: number): ValidationFlowAuto {
+  return {
+    type: "async",
+    strategy: "auto",
+    debounceMs,
+  } as ValidationFlowAuto;
+}
+
+function force(debounceMs?: number): ValidationFlowForce {
+  return {
+    type: "async",
+    strategy: "force",
+    debounceMs,
+  } as ValidationFlowForce;
+}
 
 function toInternalOptions<T extends DefaultValues, K extends keyof T, D>(
   name: K,
@@ -378,138 +532,100 @@ function toInternalOptions<T extends DefaultValues, K extends keyof T, D>(
   } satisfies InternalFieldOptions<T, K, D>;
 }
 
-type SignalFormStore<T extends DefaultValues, D = unknown> = {
-  getField: <K extends keyof T>(name: K) => FieldEntry<T[K], D>;
-  mount: (name: keyof T) => void;
-  registerOptions: <K extends keyof T>(
-    name: K,
-    options: FieldOptionsConfig<T, K, D>,
-  ) => void;
-  unregisterOptions: (name: keyof T) => void;
-  unmount: (name: keyof T) => void;
-  setValue: (
-    name: keyof T,
-    value: T[keyof T],
-    options?: {
-      markTouched?: boolean;
-      incrementChanges?: boolean;
-      dispatch?: boolean;
-    },
-  ) => void;
-  dispatchBlur: (name: keyof T) => void;
-  submit: (fields?: readonly (keyof T)[]) => void;
-  revalidate: (name: keyof T, action?: Action) => void;
-  reset: (
-    name: keyof T,
-    options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
-  ) => void;
-};
+const StoreContext = createContext<unknown>(null);
 
-function makeValidationFactory<D = unknown>(): ValidationFactory<D> {
-  return {
-    valid: (props) => ({ type: "valid", details: props?.details }),
-    invalid: (props) => ({
-      type: "invalid",
-      issues: props?.issues ?? [],
-      details: props?.details,
-    }),
-    warning: (props) => ({
-      type: "warning",
-      issues: props?.issues ?? [],
-      details: props?.details,
-    }),
-    idle: (props) => ({ type: "idle", details: props?.details }),
-    waiting: (props) => ({ type: "waiting", details: props?.details }),
-    checking: (props) => ({ type: "checking", details: props?.details }),
-    async: {
-      skip: () => ({ type: "async", strategy: "skip" }),
-      auto: (debounceMs?: number) => ({
-        type: "async",
-        strategy: "auto",
-        debounceMs,
-      }),
-      force: (debounceMs?: number) => ({
-        type: "async",
-        strategy: "force",
-        debounceMs,
-      }),
-    },
-  };
-}
+// =====================================
+// Provider Component
+// =====================================
 
-function makeFinalizeValidationFactory<
-  D = unknown,
->(): FinalizeValidationFactory<D> {
-  return {
-    valid: (props) => ({ type: "valid", details: props?.details }),
-    invalid: (props) => ({
-      type: "invalid",
-      issues: props?.issues ?? [],
-      details: props?.details,
-    }),
-    warning: (props) => ({
-      type: "warning",
-      issues: props?.issues ?? [],
-      details: props?.details,
-    }),
-  };
-}
-
-const SignalStoreContext = createContext<unknown>(null);
-
-function SignalFormProvider<T extends DefaultValues, D = unknown>({
+function FormProvider<T extends DefaultValues, D = unknown>({
   children,
   formStore,
 }: Readonly<{
   children: React.ReactNode;
-  formStore: SignalFormStore<T, D>;
+  formStore: FormStore<T, D>;
 }>) {
-  return <SignalStoreContext value={formStore}>{children}</SignalStoreContext>;
+  return <StoreContext value={formStore}>{children}</StoreContext>;
 }
 
-type UseFieldSignalResult<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-> = {
-  name: K;
-  value: T[K];
-  meta: FieldMeta;
-  validationState: FieldState<D>;
-  handleChange: (value: T[K]) => void;
-  handleBlur: () => void;
-};
+// =====================================
+// Store Implementation
+// =====================================
 
-export type UseSignalFormResult<T extends DefaultValues, D = unknown> = {
-  formStore: SignalFormStore<T, D>;
-  Form: (props: React.ComponentProps<"form">) => React.ReactElement;
-};
-
-type UseSignalFormOptions<T extends DefaultValues> = {
-  defaultValues: T;
-  debounceMs?: number;
-  watcherMaxSteps?: number;
-};
-
-type CreateSignalFormHookResult<T extends DefaultValues, D = unknown> = {
-  useSignalForm: (
-    options: UseSignalFormOptions<T>,
-  ) => UseSignalFormResult<T, D>;
-  useSignalField: <K extends keyof T>(
-    options: UseFieldSignalOptions<T, K, D>,
-  ) => Prettify<UseFieldSignalResult<T, K, D>>;
-};
-
-function createSignalFormStore<T extends DefaultValues, D = unknown>(
-  options: UseSignalFormOptions<T>,
-): SignalFormStore<T, D> {
+function createFormStore<T extends DefaultValues, D = unknown>(
+  options: UseFormOptions<T>,
+): FormStore<T, D> {
   const { defaultValues } = options;
 
   const defaultDebounceMs = normalizeDebounceMs(
     options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
   );
 
-  const fieldsMap: SignalFieldMap<T, D> = new Map();
+  // -- Validation constructors
+  function valid(props?: { details?: D }): FieldStateValid<D> {
+    return { type: "valid", details: props?.details } as FieldStateValid<D>;
+  }
+
+  function invalid(props?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }): FieldStateInvalid<D> {
+    return {
+      type: "invalid",
+      issues: props?.issues ?? [],
+      details: props?.details,
+    } as FieldStateInvalid<D>;
+  }
+
+  function warning(props?: {
+    issues?: readonly StandardSchemaV1.Issue[];
+    details?: D;
+  }): FieldStateWarning<D> {
+    return {
+      type: "warning",
+      issues: props?.issues ?? [],
+      details: props?.details,
+    } as FieldStateWarning<D>;
+  }
+
+  function idle(props?: { details?: D }): FieldStateIdle<D> {
+    return { type: "idle", details: props?.details } as FieldStateIdle<D>;
+  }
+
+  function waiting(props?: { details?: D }): FieldStateWaiting<D> {
+    return { type: "waiting", details: props?.details } as FieldStateWaiting<D>;
+  }
+
+  function checking(props?: { details?: D }): FieldStateChecking<D> {
+    return {
+      type: "checking",
+      details: props?.details,
+    } as FieldStateChecking<D>;
+  }
+
+  // -- Helper bundles exposed to user callbacks
+  const validationHelper = {
+    idle,
+    invalid,
+    valid,
+    warning,
+    async: { auto, force, skip },
+  } satisfies ValidationHelper<D>;
+
+  const internalValidationHelper = {
+    checking,
+    waiting,
+  } satisfies InternalValidationHelper<D>;
+
+  const asyncValidationHelper = {
+    idle,
+    invalid,
+    valid,
+    warning,
+  } satisfies AsyncValidationHelper<D>;
+
+  // -- Form state containers
+  const fieldsMap: FieldMap<T, D> = new Map();
 
   const defaultValuesEntries = Object.entries(defaultValues) as [
     key: keyof T,
@@ -524,7 +640,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
         numberOfChanges: signal(0),
         numberOfSubmissions: signal(0),
       },
-      validationState: signal<FieldState<D>>({ type: "idle" }),
+      validationState: signal<FieldState<D>>(validationHelper.idle()),
     });
   }
 
@@ -551,10 +667,6 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
     integer: "floor",
   });
 
-  const validation = makeValidationFactory<D>();
-
-  const finalizeValidation = makeFinalizeValidationFactory<D>();
-
   function getRunningValidation<K extends keyof T>(
     field: K,
   ): RunningValidation<T[K]> | undefined {
@@ -577,6 +689,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
     bailOut: false,
   };
 
+  // -- Internal getters/setters
   function requireEntry<K extends keyof T>(name: K): FieldEntry<T[K], D> {
     const entry = fieldsMap.get(name);
     if (!entry) {
@@ -585,6 +698,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
     return entry as unknown as FieldEntry<T[K], D>;
   }
 
+  // -- Dispatch transaction wrapper
   function runInDispatchTransaction(fn: () => void) {
     const isRoot = watcherTransaction.depth === 0;
     watcherTransaction.depth += 1;
@@ -607,6 +721,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
     }
   }
 
+  // -- Validation lifecycle
   function cleanupValidation(field: keyof T) {
     const rv = getRunningValidation(field);
     if (!rv) {
@@ -664,7 +779,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
       return;
     }
     const validationId = incrementValidationId(field);
-    setFieldState(field, { type: "waiting" });
+    setFieldState(field, internalValidationHelper.waiting());
     const timeoutId = setTimeout(() => {
       clearValidationTimeout(field);
       runValidation(field, value, action, cause);
@@ -699,7 +814,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
       abortController,
       validationId,
     });
-    setFieldState(field, { type: "checking" });
+    setFieldState(field, internalValidationHelper.checking());
     setLastValidatedValue(field, value);
     lastValidatedChanges.set(
       field,
@@ -723,7 +838,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
         validationState: currentFieldView.validationState,
         signal,
         helpers: {
-          validation: finalizeValidation,
+          validation: asyncValidationHelper,
           validateWithStandardSchemaAsync: async () =>
             std ? await standardValidateAsync(std, value) : undefined,
         },
@@ -754,15 +869,17 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
         if (validationId !== validationIds.get(field)) {
           return;
         }
-        setFieldState(field, {
-          type: "invalid",
-          issues: [
-            {
-              message:
-                error instanceof Error ? error.message : "Validation failed",
-            },
-          ],
-        });
+        setFieldState(
+          field,
+          validationHelper.invalid({
+            issues: [
+              {
+                message:
+                  error instanceof Error ? error.message : "Validation failed",
+              },
+            ],
+          }),
+        );
         cleanupValidation(field);
       });
   }
@@ -813,6 +930,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
     }
   }
 
+  // -- Respond dispatch
   function runRespond<K extends keyof T>(
     target: K,
     causeField: K | Exclude<keyof T, K>,
@@ -833,7 +951,12 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
 
     if (!opts.respond && opts.respondAsync) {
       // No sync respond provided, but async path configured: force async
-      handleAsyncFlow(target, validation.async.force(), action, causeForTarget);
+      handleAsyncFlow(
+        target,
+        validationHelper.async.force(),
+        action,
+        causeForTarget,
+      );
       return;
     }
 
@@ -856,13 +979,13 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
           getFieldViewFromMaps(fieldsMap, mountedFields, fieldName),
       },
       helpers: {
-        validation,
+        validation: validationHelper,
         validateWithStandardSchema: () =>
           std ? standardValidate(std, value) : undefined,
       },
     });
 
-    const outcome = result ?? validation.async.skip();
+    const outcome = result ?? validationHelper.async.skip();
 
     if (outcome.type === "async") {
       handleAsyncFlow(target, outcome, action, causeForTarget);
@@ -872,6 +995,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
     }
   }
 
+  // -- Reaction graph and dispatch
   function dispatch(watched: keyof T, action: Action) {
     runInDispatchTransaction(() => {
       const key = `${String(watched)}:${action}`;
@@ -969,6 +1093,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
     targetToWatchKeys.set(name, keysForTarget);
   }
 
+  // -- Public API (mutations)
   const api = {
     setValue: <K extends keyof T>(
       name: K,
@@ -1023,7 +1148,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
       }
 
       if (options?.validation) {
-        setFieldState(name, { type: "idle" });
+        setFieldState(name, validationHelper.idle());
         cleanupValidation(name);
       }
     },
@@ -1055,6 +1180,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
     },
   } as const;
 
+  // -- Options registration lifecycle
   function setFieldOptions<K extends keyof T>(
     name: K,
     opts: FieldOptionsConfig<T, K, D> | undefined,
@@ -1110,7 +1236,7 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
     setFieldOptions(name, undefined);
   }
 
-  const store: SignalFormStore<T, D> = {
+  const store: FormStore<T, D> = {
     dispatchBlur,
     registerOptions,
     unregisterOptions,
@@ -1128,17 +1254,17 @@ function createSignalFormStore<T extends DefaultValues, D = unknown>(
   return store;
 }
 
-function useSignalField<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
->(
-  options: UseFieldSignalOptions<T, K, D>,
-): Prettify<UseFieldSignalResult<T, K, D>> {
-  const store = use(SignalStoreContext) as SignalFormStore<T, D> | null;
+// =====================================
+// Hooks
+// =====================================
+
+function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
+  options: UseFieldOptions<T, K, D>,
+): Prettify<UseFieldResult<T, K, D>> {
+  const store = use(StoreContext) as FormStore<T, D> | null;
 
   if (!store) {
-    throw new Error("useFieldSignal must be used within a SignalFormProvider");
+    throw new Error("useField must be used within a FormProvider");
   }
 
   const { name, debounceMs, on, respond, respondAsync, standardSchema } =
@@ -1199,27 +1325,27 @@ function useSignalField<
   };
 }
 
-export function useSignalForm<T extends DefaultValues, D = unknown>(
-  options: UseSignalFormOptions<T>,
-): UseSignalFormResult<T, D> {
-  const [formStore] = useState(() => createSignalFormStore<T, D>(options));
+export function useForm<T extends DefaultValues, D = unknown>(
+  options: UseFormOptions<T>,
+): UseFormResult<T, D> {
+  const [formStore] = useState(() => createFormStore<T, D>(options));
 
   return {
     formStore,
     Form: (props: React.ComponentProps<"form">) => (
-      <SignalFormProvider formStore={formStore}>
+      <FormProvider formStore={formStore}>
         <form {...props} />
-      </SignalFormProvider>
+      </FormProvider>
     ),
   };
 }
 
-export function createSignalFormHook<
+export function createFormHook<
   T extends DefaultValues,
   D = unknown,
->(): CreateSignalFormHookResult<T, D> {
+>(): CreateFormHookResult<T, D> {
   return {
-    useSignalForm,
-    useSignalField,
+    useForm,
+    useField,
   };
 }
