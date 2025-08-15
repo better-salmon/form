@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createFormHook, type UseFieldOptions } from "@lib/create-form-hook";
+import { createForm, type FieldOptions } from "@lib/create-form-hook";
 import { cn } from "@/utils/cn";
 
 type DemoForm = {
@@ -8,7 +8,7 @@ type DemoForm = {
 
 type Mode = "async" | "sync" | "none";
 
-const { useForm, useField, defineFieldOptions } = createFormHook<DemoForm>();
+const { useForm, useField, defineField } = createForm<DemoForm>();
 
 export default function AsyncSyncToggleDemo() {
   const { Form } = useForm({
@@ -24,7 +24,7 @@ export default function AsyncSyncToggleDemo() {
           <h2 className="text-2xl font-bold">Async → Sync Toggle Demo</h2>
           <p className="mt-2 text-sm text-gray-600">
             Type to start async (debounced) validation, then quickly switch to
-            sync while it's waiting. Observe whether the status leaves "waiting"
+            sync while it's pending. Observe whether the status leaves "pending"
             without another dispatch.
           </p>
         </div>
@@ -87,28 +87,28 @@ export default function AsyncSyncToggleDemo() {
   );
 }
 
-const valueFieldOptionsNone = defineFieldOptions({
+const valueFieldOptionsNone = defineField({
   name: "value",
 });
 
-const valueFieldOptionsAsync = defineFieldOptions({
+const valueFieldOptionsAsync = defineField({
   name: "value",
   debounceMs: 1200,
-  respondAsync: async (ctx) => {
+  respondAsync: async (context) => {
     await new Promise((r) => setTimeout(r, 1000));
-    return ctx.helpers.validation.valid();
+    return context.helpers.validation.valid();
   },
 });
 
-const valueFieldOptionsSync = defineFieldOptions({
+const valueFieldOptionsSync = defineField({
   name: "value",
-  respond: (ctx) => {
-    return ctx.helpers.validation.valid();
+  respond: (context) => {
+    return context.helpers.validation.valid();
   },
 });
 
 function ValueField({ mode }: Readonly<{ mode: Mode }>) {
-  let options: UseFieldOptions<DemoForm, "value">;
+  let options: FieldOptions<DemoForm, "value">;
 
   if (mode === "async") {
     options = valueFieldOptionsAsync;
@@ -130,9 +130,9 @@ function ValueField({ mode }: Readonly<{ mode: Mode }>) {
           value={field.value}
           data-testid="field-input"
           onChange={(e) => {
-            field.handleChange(e.target.value);
+            field.setValue(e.target.value);
           }}
-          onBlur={field.handleBlur}
+          onBlur={field.blur}
           className={
             "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none"
           }
@@ -140,7 +140,7 @@ function ValueField({ mode }: Readonly<{ mode: Mode }>) {
         />
         <div className="mt-1 text-sm">
           <span className="font-medium">Status:</span>{" "}
-          <span data-testid="status">{field.validationState.type}</span>
+          <span data-testid="status">{field.validation.type}</span>
         </div>
       </div>
     </label>

@@ -1,0 +1,60 @@
+---
+alwaysApply: false
+---
+
+# Type Tests Guide (Vitest + TypeScript)
+
+Use this guide to write static type tests for our library. These tests are not executed at runtime; they are validated by the TypeScript compiler via Vitest's typecheck mode.
+
+## Naming and Location
+
+- **File naming**: place type tests in files ending with `*.test-d.ts`.
+- **Config**: See [vitest.config.ts](mdc:vitest.config.ts) for `test.typecheck.include` patterns.
+
+## How to Write Type Tests
+
+- **Imports**: use `expectTypeOf` and `assertType` from `vitest`.
+  - Example:
+    ```ts
+    import { describe, it, expectTypeOf, assertType } from "vitest";
+    ```
+- **Positive assertions**: prefer `expectTypeOf(x).toExtend<...>()` to check subtype/compatibility.
+- **Exact equality**: use `toEqualTypeOf` for strict equality of types.
+- **Deprecated**: avoid `toMatchTypeOf` (deprecated); use `toExtend` or `toMatchObjectType` instead.
+- **Negative assertions**: use `@ts-expect-error` on the line immediately before the code that should error.
+  - Keep the erroring expression simple and focused to avoid "Unused @ts-expect-error".
+  - Prefer wrong types over runtime constructs; do not rely on runtime values.
+- **Avoid `any`**: prefer `unknown` in tests where a generic placeholder is needed.
+
+## Running Type Tests
+
+- Use the project script which enables `--typecheck`:
+  - `pnpm test`
+
+## Library‑specific conventions (createForm/defineField)
+
+- Import types as needed from our library to ensure strictness:
+
+  ```ts
+  import { createForm } from "@lib/create-form-hook";
+  import type { Event } from "@lib/create-form-hook";
+  import type { StandardSchemaV1 } from "@standard-schema/spec";
+  ```
+
+## Lint Hygiene in Type Tests
+
+- Do not declare unused variables; assert on the returned values or inline.
+- Keep `@ts-expect-error` directly above the erroring statement to avoid unused directives.
+- Prefer `toExtend` over deprecated APIs, and avoid introducing `any` unless unavoidable.
+- If some strict rule prevents you from writing a comprehensive test, disable the rule in the test file.
+
+## Example snippets
+
+```ts
+// Positive: strict subset
+expectTypeOf({ a: 1 }).toExtend<{ a: number }>();
+
+// Negative: wrong param type
+// @ts-expect-error second param must be string
+assertType<string>((x: number, y: number) => `${x}${y}` as any);
+```

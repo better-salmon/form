@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-test("async→sync clears waiting immediately without extra input", async ({
+test("async→sync clears pending immediately without extra input", async ({
   page,
 }) => {
   await page.goto("/?demo=async-sync-toggle-demo");
@@ -10,7 +10,7 @@ test("async→sync clears waiting immediately without extra input", async ({
   const toSync = page.getByTestId("switch-to-sync");
 
   await input.fill("x");
-  await expect(status).toHaveText("waiting");
+  await expect(status).toHaveText("pending");
 
   await toSync.click();
 
@@ -18,7 +18,7 @@ test("async→sync clears waiting immediately without extra input", async ({
   await expect(status).toHaveText("valid", { timeout: 1000 });
 });
 
-test("async→none clears waiting to idle without extra input", async ({
+test("async→none clears pending to idle without extra input", async ({
   page,
 }) => {
   await page.goto("/?demo=async-sync-toggle-demo");
@@ -30,7 +30,7 @@ test("async→none clears waiting to idle without extra input", async ({
   await expect(status).toHaveText("valid");
 
   await input.fill("x");
-  await expect(status).toHaveText("waiting");
+  await expect(status).toHaveText("pending");
 
   await toNone.click();
   await expect(status).toHaveText("idle", { timeout: 1000 });

@@ -1,4 +1,4 @@
-import { createFormHook } from "@lib/create-form-hook";
+import { createForm } from "@lib/create-form-hook";
 import type { Branded } from "@/types/types";
 
 type Password = Branded<string, "password">;
@@ -8,8 +8,7 @@ type PasswordForm = {
   confirmPassword: Password;
 };
 
-const { useField, useForm, defineFieldOptions } =
-  createFormHook<PasswordForm>();
+const { useField, useForm, defineField } = createForm<PasswordForm>();
 
 export default function FormDemo() {
   const { Form } = useForm({
@@ -47,33 +46,33 @@ export default function FormDemo() {
   );
 }
 
-const passwordFieldOptions = defineFieldOptions({
+const passwordFieldOptions = defineField({
   name: "password",
-  respond: (props) => {
-    console.log(props);
-    if (props.value.length < 4) {
-      return props.helpers.validation.invalid({
+  respond: (context) => {
+    console.log(context);
+    if (context.value.length < 4) {
+      return context.helpers.validation.invalid({
         issues: [{ message: "Password must be at least 4 characters long" }],
       });
     }
-    return props.helpers.validation.valid();
+    return context.helpers.validation.valid();
   },
 });
 
-const confirmPasswordFieldOptions = defineFieldOptions({
+const confirmPasswordFieldOptions = defineField({
   name: "confirmPassword",
-  on: { from: { password: ["change"] } },
-  respond: (props) => {
-    console.log(props);
-    if (props.value.length < 4) {
-      return props.helpers.validation.idle();
+  watch: { fields: { password: ["change"] } },
+  respond: (context) => {
+    console.log(context);
+    if (context.value.length < 4) {
+      return context.helpers.validation.idle();
     }
-    if (props.value !== props.form.getFieldView("password").value) {
-      return props.helpers.validation.invalid({
+    if (context.value !== context.form.getSnapshot("password").value) {
+      return context.helpers.validation.invalid({
         issues: [{ message: "Passwords do not match" }],
       });
     }
-    return props.helpers.validation.valid();
+    return context.helpers.validation.valid();
   },
 });
 
@@ -89,19 +88,17 @@ function PasswordField() {
           name={field.name}
           value={field.value}
           onChange={(e) => {
-            field.handleChange(e.target.value as Password);
+            field.setValue(e.target.value as Password);
           }}
-          onBlur={field.handleBlur}
+          onBlur={field.blur}
           className={
             "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none"
           }
           placeholder="Enter your password..."
         />
         <div className="text-sm text-red-500">
-          {field.validationState.type === "invalid" &&
-            field.validationState.issues
-              .map((issue) => issue.message)
-              .join(", ")}
+          {field.validation.type === "invalid" &&
+            field.validation.issues.map((issue) => issue.message).join(", ")}
         </div>
       </div>
     </label>
@@ -120,19 +117,17 @@ function ConfirmPasswordField() {
           name={field.name}
           value={field.value}
           onChange={(e) => {
-            field.handleChange(e.target.value as Password);
+            field.setValue(e.target.value as Password);
           }}
-          onBlur={field.handleBlur}
+          onBlur={field.blur}
           className={
             "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none"
           }
           placeholder="Confirm your password..."
         />
         <div className="text-sm text-red-500">
-          {field.validationState.type === "invalid" &&
-            field.validationState.issues
-              .map((issue) => issue.message)
-              .join(", ")}
+          {field.validation.type === "invalid" &&
+            field.validation.issues.map((issue) => issue.message).join(", ")}
         </div>
       </div>
     </label>
