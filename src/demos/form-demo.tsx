@@ -1,4 +1,4 @@
-import { createFormHook } from "@lib/create-form-hook";
+import { createForm } from "@lib/create-form-hook";
 import type { Branded } from "@/types/types";
 
 type Name = Branded<string, "name">;
@@ -9,7 +9,7 @@ type NameForm = {
   email: Email;
 };
 
-const { useField, useForm, defineFieldOptions } = createFormHook<NameForm>();
+const { useField, useForm, defineField } = createForm<NameForm>();
 
 export default function FormDemo() {
   const { Form } = useForm({
@@ -47,17 +47,17 @@ export default function FormDemo() {
   );
 }
 
-const nameFieldOptions = defineFieldOptions({
+const nameFieldOptions = defineField({
   name: "name",
-  respond: (props) => {
-    console.log(props);
+  respond: (context) => {
+    console.log(context);
   },
 });
 
-const emailFieldOptions = defineFieldOptions({
+const emailFieldOptions = defineField({
   name: "email",
-  respond: (props) => {
-    console.log(props);
+  respond: (context) => {
+    console.log(context);
   },
 });
 
@@ -73,9 +73,9 @@ function NameField() {
           name={field.name}
           value={field.value}
           onChange={(e) => {
-            field.handleChange(e.target.value as Name);
+            field.setValue(e.target.value as Name);
           }}
-          onBlur={field.handleBlur}
+          onBlur={field.blur}
           className={
             "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none"
           }
@@ -98,9 +98,9 @@ function EmailField() {
           name={field.name}
           value={field.value}
           onChange={(e) => {
-            field.handleChange(e.target.value as Email);
+            field.setValue(e.target.value as Email);
           }}
-          onBlur={field.handleBlur}
+          onBlur={field.blur}
           className={
             "w-full rounded-md border-2 border-gray-300 p-2 pr-10 outline-none"
           }

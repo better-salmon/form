@@ -19,7 +19,7 @@ const DEMOS = [
     id: "async-sync-toggle-demo",
     name: "Async → Sync Toggle",
     component: lazy(() => import("@/demos/async-sync-toggle-demo")),
-    description: "Toggle a field from async (debounced) to sync while waiting",
+    description: "Toggle a field from async (debounced) to sync while pending",
   },
 ] as const;
 

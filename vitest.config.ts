@@ -19,6 +19,10 @@ export default defineConfig({
   // @ts-expect-error
   plugins: [react()],
   test: {
+    typecheck: {
+      include: ["lib/**/*.test-d.ts"],
+      tsconfig: path.resolve(__dirname, "./tsconfig.lib.json"),
+    },
     include: ["lib/**/*.test.ts", "lib/**/*.test.tsx"],
     setupFiles: [path.resolve(__dirname, "./test/setup.browser.ts")],
     browser: {

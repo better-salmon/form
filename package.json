@@ -16,7 +16,7 @@
     "lint": "eslint --max-warnings 0 .",
     "preview": "vite preview",
     "start:fake-server": "node fake-server/fake-server.ts",
-    "test": "vitest run",
+    "test": "vitest run --typecheck",
     "test:ui": "vitest"
   },
   "overrides": {
