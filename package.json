@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -b && vite build",
     "build:lib": "tsdown",
+    "build:lib:minify": "MINIFY=true tsdown",
     "check-types": "tsc -p tsconfig.lib.json && tsc -p tsconfig.app.json && tsc -p tsconfig.lib.test.json && tsc -p tsconfig.playwright.json",
     "dev": "vite",
     "e2e": "playwright test",
