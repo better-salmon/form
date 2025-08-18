@@ -10,6 +10,12 @@ const DEMOS = [
     description: "Simple form with name and email fields",
   },
   {
+    id: "singleton-form-demo",
+    name: "Singleton Form Demo",
+    component: lazy(() => import("@/demos/singleton-form-demo")),
+    description: "Simple form with name and email fields",
+  },
+  {
     id: "sync-respond-demo",
     name: "Sync Respond Demo",
     component: lazy(() => import("@/demos/sync-respond-demo")),
@@ -171,6 +177,7 @@ function App() {
                     <div className="text-sm text-gray-500">Loading…</div>
                   }
                 >
+                  <ActiveComponent />
                   <ActiveComponent />
                 </Suspense>
               )}
