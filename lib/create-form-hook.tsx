@@ -260,7 +260,7 @@ type UseFormOptions<T extends DefaultValues> = {
   maxDispatchSteps?: number;
 };
 
-type CreateFormHookResult<T extends DefaultValues, D = unknown> = {
+type CreateFormResult<T extends DefaultValues, D = unknown> = {
   useForm: (options: UseFormOptions<T>) => UseFormReturn<T, D>;
   useField: <K extends keyof T>(
     options: FieldOptions<T, K, D>,
@@ -268,6 +268,16 @@ type CreateFormHookResult<T extends DefaultValues, D = unknown> = {
   defineField: <K extends keyof T>(
     options: FieldOptions<T, K, D>,
   ) => FieldOptions<T, K, D>;
+};
+
+type CreateSingletonFormResult<T extends DefaultValues, D = unknown> = {
+  useField: <K extends keyof T>(
+    options: FieldOptions<T, K, D>,
+  ) => Prettify<UseFieldReturn<T, K, D>>;
+  defineField: <K extends keyof T>(
+    options: FieldOptions<T, K, D>,
+  ) => FieldOptions<T, K, D>;
+  formApi: FormApi<T, D>;
 };
 
 // =====================================
@@ -1412,10 +1422,86 @@ export function useForm<T extends DefaultValues, D = unknown>(
 export function createForm<
   T extends DefaultValues,
   D = unknown,
->(): CreateFormHookResult<T, D> {
+>(): CreateFormResult<T, D> {
   return {
     defineField,
     useField,
     useForm,
+  };
+}
+
+export function experimental_createSingletonForm<
+  T extends DefaultValues,
+  D = unknown,
+>(options: UseFormOptions<T>): CreateSingletonFormResult<T, D> {
+  const store = createFormStore<T, D>(options);
+
+  return {
+    defineField,
+    formApi: store.formApi,
+    useField<K extends keyof T>(
+      options: FieldOptions<T, K, D>,
+    ): Prettify<UseFieldReturn<T, K, D>> {
+      const { name, debounceMs, watch, respond, respondAsync, standardSchema } =
+        options;
+
+      useIsomorphicEffect(() => {
+        store.registerOptions(name, {
+          name,
+          debounceMs,
+          respondAsync,
+          watch,
+          respond,
+          standardSchema,
+        } as FieldOptions<T, K, D>);
+
+        return () => {
+          store.unregisterOptions(name);
+        };
+      }, [debounceMs, name, respond, respondAsync, standardSchema, watch]);
+
+      useIsomorphicEffect(() => {
+        store.mount(name);
+
+        return () => {
+          store.unmount(name);
+        };
+      }, [name]);
+
+      const field = store.getFieldEntry(name);
+
+      const value = useSignal(field.value);
+      const isTouched = useSignal(field.meta.isTouched);
+      const changeCount = useSignal(field.meta.changeCount);
+      const submitCount = useSignal(field.meta.submitCount);
+      const validation = useSignal(field.validation);
+
+      const setValue = useCallback(
+        (value: T[K]) => {
+          store.setValue(name, value);
+        },
+        [name],
+      );
+
+      const blur = useCallback(() => {
+        store.blur(name);
+      }, [name]);
+
+      const formApi = useMemo(() => store.formApi, []);
+
+      return {
+        name,
+        value,
+        meta: {
+          isTouched,
+          changeCount,
+          submitCount,
+        },
+        validation,
+        setValue,
+        blur,
+        formApi,
+      };
+    },
   };
 }

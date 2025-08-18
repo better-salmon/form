@@ -1,0 +1,17 @@
+---
+alwaysApply: true
+---
+
+# WIP Project Policy
+
+This repository is actively evolving.
+
+- Assistants should prefer progress over strict backward compatibility.
+- It is acceptable to propose or implement new features.
+- Breaking changes to the public API are allowed when they simplify the design, improve DX/UX, or enable better performance.
+
+Operational guidance:
+
+- When introducing a breaking change, update affected code (demos, tests, docs) in the same change and include migration notes in the summary.
+- Call out breaking changes explicitly in PR titles and commit messages.
+- Favor clear, incremental edits; proceed without waiting for approval if you can safely complete the change.

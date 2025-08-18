@@ -8,18 +8,28 @@ const DEMOS = [
     name: "Form Demo",
     component: lazy(() => import("@/demos/form-demo")),
     description: "Simple form with name and email fields",
+    demonstrateIsolation: false,
+  },
+  {
+    id: "singleton-form-demo",
+    name: "Singleton Form Demo",
+    component: lazy(() => import("@/demos/singleton-form-demo")),
+    description: "Simple form with name and email fields",
+    demonstrateIsolation: true,
   },
   {
     id: "sync-respond-demo",
     name: "Sync Respond Demo",
     component: lazy(() => import("@/demos/sync-respond-demo")),
     description: "Simple form with password and confirm password fields",
+    demonstrateIsolation: false,
   },
   {
     id: "async-sync-toggle-demo",
     name: "Async → Sync Toggle",
     component: lazy(() => import("@/demos/async-sync-toggle-demo")),
     description: "Toggle a field from async (debounced) to sync while pending",
+    demonstrateIsolation: false,
   },
 ] as const;
 
@@ -172,6 +182,7 @@ function App() {
                   }
                 >
                   <ActiveComponent />
+                  {activeDemoInfo?.demonstrateIsolation && <ActiveComponent />}
                 </Suspense>
               )}
             </div>
