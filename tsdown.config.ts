@@ -3,21 +3,23 @@ import { defineConfig, type UserConfig } from "tsdown";
 export default defineConfig(() => {
   const minify = process.env.MINIFY === "true";
 
-  const entry = [
-    "lib/**/*.{ts,tsx}",
+  const testEntries = [
     "!lib/**/*.test.ts",
     "!lib/**/*.test.tsx",
     "!lib/**/*.test-d.ts",
     "!lib/**/*.test-d.tsx",
   ];
 
+  const entriesSet = new Set(testEntries);
+
   if (minify) {
-    entry.shift();
-    entry.push("lib/create-form-hook.tsx");
+    entriesSet.add("lib/create-form-hook.tsx");
+  } else {
+    entriesSet.add("lib/**/*.{ts,tsx}");
   }
 
   return {
-    entry,
+    entry: [...entriesSet],
     outDir: "dist-lib",
     clean: true,
     target: "chrome138",
