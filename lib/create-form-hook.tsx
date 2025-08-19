@@ -1,5 +1,13 @@
-import { createContext, use, useCallback, useMemo, useState } from "react";
-import { signal, useSignal, type Signal } from "@lib/signals/signals";
+import {
+  createContext,
+  use,
+  useCallback,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  useRef,
+} from "react";
+import { shallow } from "@lib/shallow";
 import { deepEqual } from "@lib/deep-equal";
 import { normalizeDebounceMs, normalizeNumber } from "@lib/normalize-number";
 import {
@@ -158,13 +166,10 @@ type ValidationHelper<D = unknown> = {
 // =====================================
 
 type FieldEntry<V, D = unknown> = {
-  value: Signal<V>;
-  meta: {
-    isTouched: Signal<boolean>;
-    changeCount: Signal<number>;
-    submitCount: Signal<number>;
-  };
-  validation: Signal<ValidationStatus<D>>;
+  value: V;
+  meta: FieldMeta;
+  validation: ValidationStatus<D>;
+  snapshot: FieldSnapshot<V, D>;
 };
 
 type FieldMap<T extends DefaultValues, D = unknown> = Map<
@@ -180,7 +185,7 @@ type RunningValidation<T> = {
   stateSnapshot: T;
   timeoutId?: ReturnType<typeof setTimeout>;
   abortController?: AbortController;
-  validationId: number;
+  validationId?: number;
 };
 
 type InternalFieldOptions<T extends DefaultValues, K extends keyof T, D> = {
@@ -215,6 +220,10 @@ type FormApi<T extends DefaultValues, D = unknown> = {
 type FormStore<T extends DefaultValues, D = unknown> = {
   formApi: FormApi<T, D>;
   getFieldEntry: <K extends keyof T>(fieldName: K) => FieldEntry<T[K], D>;
+  // Reactivity
+  subscribe: (listener: () => void) => () => void;
+  getVersion: () => number;
+  select: SelectHelpers<T, D>;
   mount: (fieldName: keyof T) => void;
   registerOptions: <K extends keyof T>(
     fieldName: K,
@@ -262,15 +271,26 @@ type UseFormOptions<T extends DefaultValues> = {
 
 type CreateFormResult<T extends DefaultValues, D = unknown> = {
   useForm: (options: UseFormOptions<T>) => UseFormReturn<T, D>;
+  useFormSelector: <S>(
+    selector: (s: SelectHelpers<T, D>) => S,
+    equality?: (a: S, b: S) => boolean,
+  ) => S;
   useField: <K extends keyof T>(
     options: FieldOptions<T, K, D>,
   ) => Prettify<UseFieldReturn<T, K, D>>;
   defineField: <K extends keyof T>(
     options: FieldOptions<T, K, D>,
   ) => FieldOptions<T, K, D>;
+  defineSelector: <S>(
+    selector: (s: SelectHelpers<T, D>) => S,
+  ) => (s: SelectHelpers<T, D>) => S;
 };
 
 type CreateSingletonFormResult<T extends DefaultValues, D = unknown> = {
+  useFormSelector: <S>(
+    selector: (s: SelectHelpers<T, D>) => S,
+    equality?: (a: S, b: S) => boolean,
+  ) => S;
   useField: <K extends keyof T>(
     options: FieldOptions<T, K, D>,
   ) => Prettify<UseFieldReturn<T, K, D>>;
@@ -278,6 +298,9 @@ type CreateSingletonFormResult<T extends DefaultValues, D = unknown> = {
     options: FieldOptions<T, K, D>,
   ) => FieldOptions<T, K, D>;
   formApi: FormApi<T, D>;
+  defineSelector: <S>(
+    selector: (s: SelectHelpers<T, D>) => S,
+  ) => (s: SelectHelpers<T, D>) => S;
 };
 
 // =====================================
@@ -662,14 +685,23 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   ][];
 
   for (const [fieldName, value] of defaultValuesEntries) {
+    const meta: FieldMeta = {
+      isTouched: false,
+      changeCount: 0,
+      submitCount: 0,
+    };
+    const validation = validationHelper.idle() as ValidationStatus<D>;
+    const snapshot: FieldSnapshot<T[typeof fieldName], D> = {
+      value,
+      meta,
+      validation,
+      isMounted: false,
+    };
     fieldsMap.set(fieldName, {
-      value: signal<T[keyof T]>(value),
-      meta: {
-        isTouched: signal(false),
-        changeCount: signal(0),
-        submitCount: signal(0),
-      },
-      validation: signal<ValidationStatus<D>>(validationHelper.idle()),
+      value,
+      meta,
+      validation,
+      snapshot,
     });
   }
 
@@ -697,6 +729,23 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     min: 1,
     integer: "floor",
   });
+
+  // -- Global subscription and batching
+  const listeners = new Set<() => void>();
+  let version = 0;
+  let dirty = false;
+
+  function markDirty() {
+    dirty = true;
+  }
+
+  function notify() {
+    version += 1;
+    const copy = [...listeners];
+    for (const l of copy) {
+      l();
+    }
+  }
 
   function getRunningValidation<K extends keyof T>(
     fieldName: K,
@@ -728,7 +777,8 @@ function createFormStore<T extends DefaultValues, D = unknown>(
 
     invariant(entry, `Unknown field: ${String(fieldName)}`);
 
-    return entry as unknown as FieldEntry<T[K], D>;
+    // The map is keyed by K so this cast is safe
+    return entry as FieldEntry<T[K], D>;
   }
 
   // -- Dispatch transaction wrapper
@@ -750,6 +800,10 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         watcherTransaction.visited.clear();
         watcherTransaction.steps = 0;
         watcherTransaction.bailOut = false;
+        if (dirty) {
+          dirty = false;
+          notify();
+        }
       }
     }
   }
@@ -784,7 +838,18 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   function setFieldState(fieldName: keyof T, state: ValidationStatus<D>) {
-    getFieldEntry(fieldName).validation.setValue(state, deepEqual);
+    const entry = getFieldEntry(fieldName);
+    if (!deepEqual(entry.validation, state)) {
+      entry.validation = state;
+      // update snapshot reference
+      entry.snapshot = {
+        value: entry.value,
+        meta: entry.meta,
+        validation: entry.validation,
+        isMounted: mountedFields.has(fieldName),
+      } as FieldSnapshot<T[typeof fieldName], D>;
+      markDirty();
+    }
   }
 
   function setLastValidatedValue<K extends keyof T>(fieldName: K, value: T[K]) {
@@ -811,7 +876,6 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       runValidation(fieldName, value, action, cause);
       return;
     }
-    const validationId = incrementValidationId(fieldName);
     setFieldState(fieldName, internalValidationHelper.pending());
     const timeoutId = setTimeout(() => {
       clearValidationTimeout(fieldName);
@@ -820,7 +884,6 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     setRunningValidation(fieldName, {
       stateSnapshot: value,
       timeoutId,
-      validationId,
     });
   }
 
@@ -842,17 +905,21 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     const abortController = new AbortController();
     const { signal } = abortController;
 
-    setRunningValidation(fieldName, {
-      stateSnapshot: value,
-      abortController,
-      validationId,
+    // Ensure the transition to "validating" notifies subscribers even when
+    // invoked from a debounce timeout (i.e. outside any existing transaction).
+    runInDispatchTransaction(() => {
+      setRunningValidation(fieldName, {
+        stateSnapshot: value,
+        abortController,
+        validationId,
+      });
+      setFieldState(fieldName, internalValidationHelper.validating());
+      setLastValidatedValue(fieldName, value);
+      lastValidatedChanges.set(
+        fieldName,
+        getFieldEntry(fieldName).meta.changeCount,
+      );
     });
-    setFieldState(fieldName, internalValidationHelper.validating());
-    setLastValidatedValue(fieldName, value);
-    lastValidatedChanges.set(
-      fieldName,
-      getFieldEntry(fieldName).meta.changeCount.getValue(),
-    );
 
     const currentFieldView = getSnapshot(fieldName);
     const standardSchema = options.standardSchema;
@@ -880,8 +947,10 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         if (validationId !== validationIds.get(fieldName)) {
           return;
         }
-        setFieldState(fieldName, result);
-        cleanupValidation(fieldName);
+        runInDispatchTransaction(() => {
+          setFieldState(fieldName, result);
+          cleanupValidation(fieldName);
+        });
       })
       .catch((error: unknown) => {
         if (abortController.signal.aborted) {
@@ -890,18 +959,22 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         if (validationId !== validationIds.get(fieldName)) {
           return;
         }
-        setFieldState(
-          fieldName,
-          validationHelper.invalid({
-            issues: [
-              {
-                message:
-                  error instanceof Error ? error.message : "Validation failed",
-              },
-            ],
-          }),
-        );
-        cleanupValidation(fieldName);
+        runInDispatchTransaction(() => {
+          setFieldState(
+            fieldName,
+            validationHelper.invalid({
+              issues: [
+                {
+                  message:
+                    error instanceof Error
+                      ? error.message
+                      : "Validation failed",
+                },
+              ],
+            }),
+          );
+          cleanupValidation(fieldName);
+        });
       });
   }
 
@@ -925,15 +998,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         if (
           shouldSkipAutoValidation(
             getRunningValidation(fieldName),
-            getFieldEntry(fieldName).value.getValue(),
+            getFieldEntry(fieldName).value,
             getLastValidatedValue(fieldName),
             lastValidatedChanges.get(fieldName) ?? 0,
-            getFieldEntry(fieldName).meta.changeCount.getValue(),
+            getFieldEntry(fieldName).meta.changeCount,
           )
         ) {
           return;
         }
-        const value = getFieldEntry(fieldName).value.getValue();
+        const value = getFieldEntry(fieldName).value;
         const debounceMs = normalizeDebounceMs(
           flow.debounceMs ?? options.debounceMs ?? defaultDebounceMs,
         );
@@ -941,7 +1014,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         return;
       }
       case "run": {
-        const value = getFieldEntry(fieldName).value.getValue();
+        const value = getFieldEntry(fieldName).value;
         const debounceMs = normalizeDebounceMs(
           flow.debounceMs ?? options.debounceMs ?? defaultDebounceMs,
         );
@@ -976,7 +1049,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       return;
     }
 
-    const value = getFieldEntry(target).value.getValue();
+    const value = getFieldEntry(target).value;
     const currentView = getSnapshot(target);
     const standardSchema = options.standardSchema;
 
@@ -1141,54 +1214,100 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       dispatch?: boolean;
     },
   ) {
-    const markTouched = options?.markTouched ?? true;
-    const incrementChanges = options?.incrementChanges ?? true;
-    const shouldDispatch = options?.dispatch ?? true;
+    runInDispatchTransaction(() => {
+      const markTouched = options?.markTouched ?? true;
+      const incrementChanges = options?.incrementChanges ?? true;
+      const shouldDispatch = options?.dispatch ?? true;
 
-    const entry = getFieldEntry(fieldName);
-    const previousValue = entry.value.getValue();
-    const hasChanged = !deepEqual(previousValue, value);
-    if (hasChanged) {
-      entry.value.setValue(value, deepEqual);
-    }
+      const entry = getFieldEntry(fieldName);
+      const previousValue = entry.value;
+      const hasChanged = !deepEqual(previousValue, value);
+      if (hasChanged) {
+        entry.value = value;
+        // update snapshot
+        entry.snapshot = {
+          value: entry.value,
+          meta: entry.meta,
+          validation: entry.validation,
+          isMounted: mountedFields.has(fieldName),
+        } as FieldSnapshot<T[K], D>;
+        markDirty();
+      }
 
-    if (markTouched) {
-      entry.meta.isTouched.setValue(true);
-    }
+      if (markTouched && !entry.meta.isTouched) {
+        entry.meta = { ...entry.meta, isTouched: true };
+        entry.snapshot = {
+          value: entry.value,
+          meta: entry.meta,
+          validation: entry.validation,
+          isMounted: mountedFields.has(fieldName),
+        } as FieldSnapshot<T[K], D>;
+        markDirty();
+      }
 
-    if (incrementChanges && hasChanged) {
-      entry.meta.changeCount.setValue(entry.meta.changeCount.getValue() + 1);
-    }
+      if (incrementChanges && hasChanged) {
+        entry.meta = {
+          ...entry.meta,
+          changeCount: entry.meta.changeCount + 1,
+        };
+        entry.snapshot = {
+          value: entry.value,
+          meta: entry.meta,
+          validation: entry.validation,
+          isMounted: mountedFields.has(fieldName),
+        } as FieldSnapshot<T[K], D>;
+        markDirty();
+      }
 
-    if (shouldDispatch && hasChanged) {
-      dispatch(fieldName, "change");
-    }
+      if (shouldDispatch && hasChanged) {
+        dispatch(fieldName, "change");
+      }
+    });
   }
   function reset(
     fieldName: keyof T,
     options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
   ) {
-    // Reset value to default without touching meta/counters by default
-    setValue(fieldName, defaultValues[fieldName], {
-      markTouched: false,
-      incrementChanges: false,
-      dispatch: options?.dispatch,
+    runInDispatchTransaction(() => {
+      // Reset value to default without touching meta/counters by default
+      setValue(fieldName, defaultValues[fieldName], {
+        markTouched: false,
+        incrementChanges: false,
+        dispatch: options?.dispatch,
+      });
+
+      if (options?.meta) {
+        const entry = getFieldEntry(fieldName);
+        entry.meta = { isTouched: false, changeCount: 0, submitCount: 0 };
+        entry.snapshot = {
+          value: entry.value,
+          meta: entry.meta,
+          validation: entry.validation,
+          isMounted: mountedFields.has(fieldName),
+        } as FieldSnapshot<T[typeof fieldName], D>;
+        markDirty();
+      }
+
+      if (options?.validation) {
+        setFieldState(fieldName, validationHelper.idle());
+        cleanupValidation(fieldName);
+      }
     });
-
-    if (options?.meta) {
-      const entry = getFieldEntry(fieldName);
-      entry.meta.isTouched.setValue(false);
-      entry.meta.changeCount.setValue(0);
-      entry.meta.submitCount.setValue(0);
-    }
-
-    if (options?.validation) {
-      setFieldState(fieldName, validationHelper.idle());
-      cleanupValidation(fieldName);
-    }
   }
   function touch(fieldName: keyof T) {
-    getFieldEntry(fieldName).meta.isTouched.setValue(true);
+    runInDispatchTransaction(() => {
+      const entry = getFieldEntry(fieldName);
+      if (!entry.meta.isTouched) {
+        entry.meta = { ...entry.meta, isTouched: true };
+        entry.snapshot = {
+          value: entry.value,
+          meta: entry.meta,
+          validation: entry.validation,
+          isMounted: mountedFields.has(fieldName),
+        } as FieldSnapshot<T[typeof fieldName], D>;
+        markDirty();
+      }
+    });
   }
   function submit(fieldNames?: readonly (keyof T)[]) {
     const toSubmit = new Set(
@@ -1200,7 +1319,14 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           continue;
         }
         const entry = getFieldEntry(fieldName);
-        entry.meta.submitCount.setValue(entry.meta.submitCount.getValue() + 1);
+        entry.meta = { ...entry.meta, submitCount: entry.meta.submitCount + 1 };
+        entry.snapshot = {
+          value: entry.value,
+          meta: entry.meta,
+          validation: entry.validation,
+          isMounted: mountedFields.has(fieldName),
+        } as FieldSnapshot<T[typeof fieldName], D>;
+        markDirty();
         dispatch(fieldName, "submit");
         if (watcherTransaction.bailOut) {
           break;
@@ -1224,7 +1350,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     if (internal.respondAsync) {
       return;
     }
-    const currentState = getFieldEntry(fieldName).validation.getValue();
+    const currentState = getFieldEntry(fieldName).validation;
     if (currentState.type !== "pending" && currentState.type !== "validating") {
       return;
     }
@@ -1241,28 +1367,52 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     fieldName: K,
     options: FieldOptions<T, K, D> | undefined,
   ) {
-    if (!options) {
-      unregisterFieldOptions(fieldName);
-      return;
-    }
-    const internal = normalizeFieldOptions(fieldName, options);
-    fieldOptions.set(fieldName, internal);
-    registerReactionsFor(fieldName, internal);
-    settleIfAsyncDisabled(fieldName, internal);
+    // Wrap in a dispatch transaction so any state changes (e.g. settling
+    // pending/validating when switching off async) notify subscribers.
+    runInDispatchTransaction(() => {
+      if (!options) {
+        unregisterFieldOptions(fieldName);
+        return;
+      }
+      const internal = normalizeFieldOptions(fieldName, options);
+      fieldOptions.set(fieldName, internal);
+      registerReactionsFor(fieldName, internal);
+      settleIfAsyncDisabled(fieldName, internal);
+    });
   }
 
   function mount(fieldName: keyof T) {
-    if (!mountedFields.has(fieldName)) {
-      mountedFields.add(fieldName);
-      dispatch(fieldName, "mount");
-    }
+    runInDispatchTransaction(() => {
+      if (!mountedFields.has(fieldName)) {
+        mountedFields.add(fieldName);
+        const entry = getFieldEntry(fieldName);
+        entry.snapshot = {
+          value: entry.value,
+          meta: entry.meta,
+          validation: entry.validation,
+          isMounted: true,
+        } as FieldSnapshot<T[typeof fieldName], D>;
+        markDirty();
+        dispatch(fieldName, "mount");
+      }
+    });
   }
 
   function unmount(fieldName: keyof T) {
-    if (mountedFields.has(fieldName)) {
-      mountedFields.delete(fieldName);
-    }
-    cleanupValidation(fieldName);
+    runInDispatchTransaction(() => {
+      if (mountedFields.has(fieldName)) {
+        mountedFields.delete(fieldName);
+        const entry = getFieldEntry(fieldName);
+        entry.snapshot = {
+          value: entry.value,
+          meta: entry.meta,
+          validation: entry.validation,
+          isMounted: false,
+        } as FieldSnapshot<T[typeof fieldName], D>;
+        markDirty();
+      }
+      cleanupValidation(fieldName);
+    });
   }
 
   function blur(fieldName: keyof T) {
@@ -1284,22 +1434,43 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     fieldName: K,
   ): FieldSnapshot<T[K], D> {
     const field = getFieldEntry(fieldName);
-    return {
-      value: field.value.getValue(),
-      meta: {
-        isTouched: field.meta.isTouched.getValue(),
-        changeCount: field.meta.changeCount.getValue(),
-        submitCount: field.meta.submitCount.getValue(),
-      },
-      validation: field.validation.getValue(),
-      isMounted: mountedFields.has(fieldName),
-    };
+    // Return cached snapshot to preserve reference stability
+    return field.snapshot;
   }
+
+  // -- Select helpers (first-class)
+  const select: SelectHelpers<T, D> = {
+    value<K extends keyof T>(name: K): T[K] {
+      return getFieldEntry(name).value;
+    },
+    meta(name: keyof T): FieldMeta {
+      return getFieldEntry(name).meta;
+    },
+    validation(name: keyof T): ValidationStatus<D> {
+      return getFieldEntry(name).validation;
+    },
+    snapshot<K extends keyof T>(name: K): FieldSnapshot<T[K], D> {
+      return getSnapshot(name);
+    },
+    mounted(name: keyof T): boolean {
+      return mountedFields.has(name);
+    },
+  };
 
   const store: FormStore<T, D> = {
     formApi: {
       getSnapshot,
     },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    getVersion() {
+      return version;
+    },
+    select,
     blur,
     registerOptions,
     unregisterOptions,
@@ -1322,6 +1493,81 @@ function defineField<T extends DefaultValues, K extends keyof T, D = unknown>(
   options: FieldOptions<T, K, D>,
 ): FieldOptions<T, K, D> {
   return options;
+}
+
+function defineSelector<T extends DefaultValues, D = unknown, S = unknown>(
+  selector: (s: SelectHelpers<T, D>) => S,
+): (s: SelectHelpers<T, D>) => S {
+  return selector;
+}
+
+// First-class select helpers typing
+export type SelectHelpers<T extends DefaultValues, D = unknown> = {
+  value: <K extends keyof T>(name: K) => T[K];
+  meta: (name: keyof T) => FieldMeta;
+  validation: (name: keyof T) => ValidationStatus<D>;
+  snapshot: <K extends keyof T>(name: K) => FieldSnapshot<T[K], D>;
+  mounted: (name: keyof T) => boolean;
+};
+
+// =====================================
+// useFormSelector (Context)
+// =====================================
+
+export function useFormSelector<
+  T extends DefaultValues,
+  D = unknown,
+  S = unknown,
+>(
+  selector: (s: SelectHelpers<T, D>) => S,
+  equality: (a: S, b: S) => boolean = Object.is,
+): S {
+  const store = use(StoreContext) as FormStore<T, D> | null;
+  invariant(store, "useFormSelector must be used within a FormProvider");
+
+  const lastSelectedRef = useRef<S | undefined>(undefined);
+  const lastVersionRef = useRef<number>(-1);
+
+  const getSelected = useCallback(() => {
+    const currentVersion = store.getVersion();
+    const prev = lastSelectedRef.current;
+    if (lastVersionRef.current === currentVersion && prev !== undefined) {
+      return prev;
+    }
+    const next = selector(store.select);
+    if (prev !== undefined && equality(prev, next)) {
+      lastVersionRef.current = currentVersion;
+      return prev;
+    }
+    lastVersionRef.current = currentVersion;
+    lastSelectedRef.current = next;
+    return next;
+  }, [store, selector, equality]);
+
+  const selected = useSyncExternalStore(
+    store.subscribe,
+    getSelected,
+    getSelected,
+  );
+
+  // Dev-only warning: not conditional hook usage; ref is declared unconditionally
+  const devWarnedRef = useRef(false);
+  if (
+    process.env.NODE_ENV !== "production" &&
+    !devWarnedRef.current &&
+    equality === Object.is
+  ) {
+    // eslint-disable-next-line sonarjs/different-types-comparison
+    const isObject = selected !== null && typeof selected === "object";
+    if (isObject) {
+      console.warn(
+        "useFormSelector: selector returned a non-primitive without a custom equality. Consider passing shallow to avoid unnecessary re-renders.",
+      );
+      devWarnedRef.current = true;
+    }
+  }
+
+  return selected;
 }
 
 // =====================================
@@ -1361,13 +1607,22 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     };
   }, [name, store]);
 
-  const field = store.getFieldEntry(name);
-
-  const value = useSignal(field.value);
-  const isTouched = useSignal(field.meta.isTouched);
-  const changeCount = useSignal(field.meta.changeCount);
-  const submitCount = useSignal(field.meta.submitCount);
-  const validation = useSignal(field.validation);
+  const { value, meta, validation } = useFormSelector<
+    T,
+    D,
+    {
+      value: T[K];
+      meta: FieldMeta;
+      validation: ValidationStatus<D>;
+    }
+  >(
+    (s) => ({
+      value: s.value(name),
+      meta: s.meta(name),
+      validation: s.validation(name),
+    }),
+    shallow,
+  );
 
   const setValue = useCallback(
     (value: T[K]) => {
@@ -1385,11 +1640,7 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
   return {
     name,
     value,
-    meta: {
-      isTouched,
-      changeCount,
-      submitCount,
-    },
+    meta,
     validation,
     setValue,
     blur,
@@ -1425,8 +1676,10 @@ export function createForm<
 >(): CreateFormResult<T, D> {
   return {
     defineField,
+    useFormSelector,
     useField,
     useForm,
+    defineSelector,
   };
 }
 
@@ -1436,72 +1689,122 @@ export function experimental_createSingletonForm<
 >(options: UseFormOptions<T>): CreateSingletonFormResult<T, D> {
   const store = createFormStore<T, D>(options);
 
-  return {
-    defineField,
-    formApi: store.formApi,
-    useField<K extends keyof T>(
-      options: FieldOptions<T, K, D>,
-    ): Prettify<UseFieldReturn<T, K, D>> {
-      const { name, debounceMs, watch, respond, respondAsync, standardSchema } =
-        options;
+  function useSingletonFormSelector<S>(
+    selector: (s: SelectHelpers<T, D>) => S,
+    equality: (a: S, b: S) => boolean = Object.is,
+  ): S {
+    const lastSelectedRef = useRef<S | undefined>(undefined);
+    const lastVersionRef = useRef<number>(-1);
 
-      useIsomorphicEffect(() => {
-        store.registerOptions(name, {
-          name,
-          debounceMs,
-          respondAsync,
-          watch,
-          respond,
-          standardSchema,
-        } as FieldOptions<T, K, D>);
+    const getSelected = useCallback(() => {
+      const currentVersion = store.getVersion();
+      const prev = lastSelectedRef.current;
+      if (lastVersionRef.current === currentVersion && prev !== undefined) {
+        return prev;
+      }
+      const next = selector(store.select);
+      if (prev !== undefined && equality(prev, next)) {
+        lastVersionRef.current = currentVersion;
+        return prev;
+      }
+      lastVersionRef.current = currentVersion;
+      lastSelectedRef.current = next;
+      return next;
+    }, [equality, selector]);
 
-        return () => {
-          store.unregisterOptions(name);
-        };
-      }, [debounceMs, name, respond, respondAsync, standardSchema, watch]);
+    const selected = useSyncExternalStore(
+      store.subscribe,
+      getSelected,
+      getSelected,
+    );
 
-      useIsomorphicEffect(() => {
-        store.mount(name);
+    // Dev-only warning: not conditional hook usage; ref is declared unconditionally
+    const devWarnedRef = useRef(false);
+    if (
+      process.env.NODE_ENV !== "production" &&
+      !devWarnedRef.current &&
+      equality === Object.is
+    ) {
+      // eslint-disable-next-line sonarjs/different-types-comparison
+      const isObject = selected !== null && typeof selected === "object";
+      if (isObject) {
+        console.warn(
+          "useFormSelector: selector returned a non-primitive without a custom equality. Consider passing shallow to avoid unnecessary re-renders.",
+        );
+        devWarnedRef.current = true;
+      }
+    }
 
-        return () => {
-          store.unmount(name);
-        };
-      }, [name]);
+    return selected;
+  }
 
-      const field = store.getFieldEntry(name);
+  function useSingletonField<K extends keyof T>(
+    options: FieldOptions<T, K, D>,
+  ): Prettify<UseFieldReturn<T, K, D>> {
+    const { name, debounceMs, watch, respond, respondAsync, standardSchema } =
+      options;
 
-      const value = useSignal(field.value);
-      const isTouched = useSignal(field.meta.isTouched);
-      const changeCount = useSignal(field.meta.changeCount);
-      const submitCount = useSignal(field.meta.submitCount);
-      const validation = useSignal(field.validation);
-
-      const setValue = useCallback(
-        (value: T[K]) => {
-          store.setValue(name, value);
-        },
-        [name],
-      );
-
-      const blur = useCallback(() => {
-        store.blur(name);
-      }, [name]);
-
-      const formApi = useMemo(() => store.formApi, []);
-
-      return {
+    useIsomorphicEffect(() => {
+      store.registerOptions(name, {
         name,
-        value,
-        meta: {
-          isTouched,
-          changeCount,
-          submitCount,
-        },
-        validation,
-        setValue,
-        blur,
-        formApi,
+        debounceMs,
+        respondAsync,
+        watch,
+        respond,
+        standardSchema,
+      } as FieldOptions<T, K, D>);
+
+      return () => {
+        store.unregisterOptions(name);
       };
-    },
+    }, [debounceMs, name, respond, respondAsync, standardSchema, watch]);
+
+    useIsomorphicEffect(() => {
+      store.mount(name);
+
+      return () => {
+        store.unmount(name);
+      };
+    }, [name]);
+
+    const { value, meta, validation } = useSingletonFormSelector(
+      (s) => ({
+        value: s.value(name),
+        meta: s.meta(name),
+        validation: s.validation(name),
+      }),
+      shallow,
+    );
+
+    const setValue = useCallback(
+      (value: T[K]) => {
+        store.setValue(name, value);
+      },
+      [name],
+    );
+
+    const blur = useCallback(() => {
+      store.blur(name);
+    }, [name]);
+
+    const formApi = useMemo(() => store.formApi, []);
+
+    return {
+      name,
+      value,
+      meta,
+      validation,
+      setValue,
+      blur,
+      formApi,
+    };
+  }
+
+  return {
+    defineField: (options) => options,
+    defineSelector: (selector) => selector,
+    formApi: store.formApi,
+    useField: useSingletonField,
+    useFormSelector: useSingletonFormSelector,
   };
 }

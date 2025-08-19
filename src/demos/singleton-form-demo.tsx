@@ -1,15 +1,17 @@
 import { experimental_createSingletonForm as createSingletonForm } from "@lib/create-form-hook";
 import type { Branded } from "@/types/types";
+import { shallow } from "@lib/shallow";
 
 type Name = Branded<string, "name">;
 type Email = Branded<string, "email">;
 
-const { useField, defineField } = createSingletonForm({
-  defaultValues: {
-    name: "" as Name,
-    email: "" as Email,
-  },
-});
+const { useField, defineField, useFormSelector, defineSelector } =
+  createSingletonForm({
+    defaultValues: {
+      name: "" as Name,
+      email: "" as Email,
+    },
+  });
 
 export default function FormDemo() {
   return (
@@ -28,12 +30,7 @@ export default function FormDemo() {
         </div>
 
         <div className="pt-4">
-          <button
-            type="submit"
-            className="w-full rounded-md border-2 border-blue-300 bg-blue-500 px-4 py-2 font-medium text-white hover:bg-blue-600 focus:outline-none"
-          >
-            Create Account
-          </button>
+          <SubmitButton />
         </div>
       </div>
     </form>
@@ -43,14 +40,22 @@ export default function FormDemo() {
 const nameFieldOptions = defineField({
   name: "name",
   respond: (context) => {
-    console.log(context);
+    if (context.value.length > 3) {
+      return context.helpers.validation.valid();
+    }
+
+    return context.helpers.validation.idle();
   },
 });
 
 const emailFieldOptions = defineField({
   name: "email",
   respond: (context) => {
-    console.log(context);
+    if (context.value.length > 3) {
+      return context.helpers.validation.valid();
+    }
+
+    return context.helpers.validation.idle();
   },
 });
 
@@ -101,5 +106,26 @@ function EmailField() {
         />
       </div>
     </label>
+  );
+}
+
+const isFormValid = defineSelector((s) => {
+  return (
+    s.validation("name").type === "valid" &&
+    s.validation("email").type === "valid"
+  );
+});
+
+function SubmitButton() {
+  const isEnabled = useFormSelector(isFormValid, shallow);
+
+  return (
+    <button
+      type="submit"
+      className="w-full rounded-md border-2 border-blue-300 bg-blue-500 px-4 py-2 font-medium text-white hover:bg-blue-600 focus:outline-none disabled:opacity-50"
+      disabled={!isEnabled}
+    >
+      Create Account
+    </button>
   );
 }
