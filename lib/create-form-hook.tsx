@@ -226,6 +226,7 @@ type FormStore<T extends DefaultValues, D = unknown> = {
   // Reactivity
   subscribe: (listener: () => void) => () => void;
   getVersion: () => number;
+  getDepVersion: (depKey: DepKey) => number;
   select: SelectHelpers<T, D>;
   mount: (fieldName: keyof T) => void;
   registerOptions: <K extends keyof T, P = unknown>(
@@ -312,6 +313,18 @@ function makeEdgeKey(
   action: FieldEvent,
 ): string {
   return `${String(watched)}->${String(target)}@${action}`;
+}
+
+// =====================================
+// Dependency Keys (per-slice tracking)
+// =====================================
+
+type SliceId = "value" | "meta" | "validation" | "mounted" | "snapshot";
+
+type DepKey = `${SliceId}:${string}`;
+
+function makeDepKey(slice: SliceId, field: PropertyKey): DepKey {
+  return `${slice}:${String(field)}`;
 }
 
 function makeCauseForTarget<T extends DefaultValues, K extends keyof T>(
@@ -739,6 +752,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   const validationIds = new Map<keyof T, number>();
   const fieldPropsMap = new Map<keyof T, unknown>();
   const fieldMountCounts = new Map<keyof T, number>();
+  const depVersions = new Map<DepKey, number>();
 
   const maxDispatchSteps = normalizeNumber(options.maxDispatchSteps, {
     fallback: DEFAULT_WATCHER_MAX_STEPS,
@@ -864,6 +878,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         validation: entry.validation,
         isMounted: mountedFields.has(fieldName),
       } as FieldSnapshot<T[typeof fieldName], D>;
+      // bump dependency versions for validation and snapshot
+      depVersions.set(
+        makeDepKey("validation", fieldName),
+        (depVersions.get(makeDepKey("validation", fieldName)) ?? 0) + 1,
+      );
+      depVersions.set(
+        makeDepKey("snapshot", fieldName),
+        (depVersions.get(makeDepKey("snapshot", fieldName)) ?? 0) + 1,
+      );
       markDirty();
     }
   }
@@ -1252,6 +1275,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           validation: entry.validation,
           isMounted: mountedFields.has(fieldName),
         } as FieldSnapshot<T[K], D>;
+        // bump dependency versions for value and snapshot
+        depVersions.set(
+          makeDepKey("value", fieldName),
+          (depVersions.get(makeDepKey("value", fieldName)) ?? 0) + 1,
+        );
+        depVersions.set(
+          makeDepKey("snapshot", fieldName),
+          (depVersions.get(makeDepKey("snapshot", fieldName)) ?? 0) + 1,
+        );
         markDirty();
       }
 
@@ -1263,6 +1295,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           validation: entry.validation,
           isMounted: mountedFields.has(fieldName),
         } as FieldSnapshot<T[K], D>;
+        // bump dependency versions for meta and snapshot
+        depVersions.set(
+          makeDepKey("meta", fieldName),
+          (depVersions.get(makeDepKey("meta", fieldName)) ?? 0) + 1,
+        );
+        depVersions.set(
+          makeDepKey("snapshot", fieldName),
+          (depVersions.get(makeDepKey("snapshot", fieldName)) ?? 0) + 1,
+        );
         markDirty();
       }
 
@@ -1277,6 +1318,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           validation: entry.validation,
           isMounted: mountedFields.has(fieldName),
         } as FieldSnapshot<T[K], D>;
+        // bump dependency versions for meta and snapshot
+        depVersions.set(
+          makeDepKey("meta", fieldName),
+          (depVersions.get(makeDepKey("meta", fieldName)) ?? 0) + 1,
+        );
+        depVersions.set(
+          makeDepKey("snapshot", fieldName),
+          (depVersions.get(makeDepKey("snapshot", fieldName)) ?? 0) + 1,
+        );
         markDirty();
       }
 
@@ -1306,6 +1356,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           validation: entry.validation,
           isMounted: mountedFields.has(fieldName),
         } as FieldSnapshot<T[typeof fieldName], D>;
+        // bump dependency versions for meta and snapshot
+        depVersions.set(
+          makeDepKey("meta", fieldName),
+          (depVersions.get(makeDepKey("meta", fieldName)) ?? 0) + 1,
+        );
+        depVersions.set(
+          makeDepKey("snapshot", fieldName),
+          (depVersions.get(makeDepKey("snapshot", fieldName)) ?? 0) + 1,
+        );
         markDirty();
       }
 
@@ -1326,6 +1385,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           validation: entry.validation,
           isMounted: mountedFields.has(fieldName),
         } as FieldSnapshot<T[typeof fieldName], D>;
+        // bump dependency versions for meta and snapshot
+        depVersions.set(
+          makeDepKey("meta", fieldName),
+          (depVersions.get(makeDepKey("meta", fieldName)) ?? 0) + 1,
+        );
+        depVersions.set(
+          makeDepKey("snapshot", fieldName),
+          (depVersions.get(makeDepKey("snapshot", fieldName)) ?? 0) + 1,
+        );
         markDirty();
       }
     });
@@ -1347,6 +1415,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           validation: entry.validation,
           isMounted: mountedFields.has(fieldName),
         } as FieldSnapshot<T[typeof fieldName], D>;
+        // bump dependency versions for meta and snapshot
+        depVersions.set(
+          makeDepKey("meta", fieldName),
+          (depVersions.get(makeDepKey("meta", fieldName)) ?? 0) + 1,
+        );
+        depVersions.set(
+          makeDepKey("snapshot", fieldName),
+          (depVersions.get(makeDepKey("snapshot", fieldName)) ?? 0) + 1,
+        );
         markDirty();
         dispatch(fieldName, "submit");
         if (watcherTransaction.bailOut) {
@@ -1415,6 +1492,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           validation: entry.validation,
           isMounted: true,
         } as FieldSnapshot<T[typeof fieldName], D>;
+        // bump dependency versions for mounted and snapshot
+        depVersions.set(
+          makeDepKey("mounted", fieldName),
+          (depVersions.get(makeDepKey("mounted", fieldName)) ?? 0) + 1,
+        );
+        depVersions.set(
+          makeDepKey("snapshot", fieldName),
+          (depVersions.get(makeDepKey("snapshot", fieldName)) ?? 0) + 1,
+        );
         markDirty();
         dispatch(fieldName, "mount");
       } else if (process.env.NODE_ENV !== "production" && nextCount > 1) {
@@ -1442,6 +1528,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
             validation: entry.validation,
             isMounted: false,
           } as FieldSnapshot<T[typeof fieldName], D>;
+          // bump dependency versions for mounted and snapshot
+          depVersions.set(
+            makeDepKey("mounted", fieldName),
+            (depVersions.get(makeDepKey("mounted", fieldName)) ?? 0) + 1,
+          );
+          depVersions.set(
+            makeDepKey("snapshot", fieldName),
+            (depVersions.get(makeDepKey("snapshot", fieldName)) ?? 0) + 1,
+          );
           markDirty();
         }
       } else {
@@ -1520,6 +1615,9 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     getVersion() {
       return version;
     },
+    getDepVersion(depKey: DepKey) {
+      return depVersions.get(depKey) ?? 0;
+    },
     select,
     blur,
     registerOptions,
@@ -1596,31 +1694,77 @@ export function useFormSelector<
   } = options ?? {};
 
   const lastSelectedRef = useRef<S | undefined>(undefined);
-  const lastVersionRef = useRef<number>(-1);
   const lastPropsRef = useRef<P | undefined>(undefined);
+  const usedDepKeysRef = useRef<Set<DepKey>>(new Set());
+  const lastDepVersionsRef = useRef<Map<DepKey, number>>(new Map());
 
   const getSelected = useCallback(() => {
-    const currentVersion = store.getVersion();
     const prev = lastSelectedRef.current;
     const propsChanged = !propsEquality(lastPropsRef.current, props);
+    // Fast path: if props didn't change and none of the previously used
+    // dependencies changed, return previous selection to preserve referential
+    // stability and avoid re-computation.
+    if (!propsChanged && prev !== undefined) {
+      let anyChanged = false;
+      for (const key of usedDepKeysRef.current) {
+        const last = lastDepVersionsRef.current.get(key) ?? 0;
+        const curr = store.getDepVersion(key);
+        if (last !== curr) {
+          anyChanged = true;
+          break;
+        }
+      }
+      if (!anyChanged) {
+        return prev;
+      }
+    }
 
-    if (
-      !propsChanged &&
-      lastVersionRef.current === currentVersion &&
-      prev !== undefined
-    ) {
-      return prev;
+    // Track dependencies during selection
+    const nextUsed = new Set<DepKey>();
+    const trackingSelect: SelectHelpers<T, D> = {
+      value: (name) => {
+        nextUsed.add(makeDepKey("value", name as PropertyKey));
+        return store.select.value(name);
+      },
+      meta: (name) => {
+        nextUsed.add(makeDepKey("meta", name as PropertyKey));
+        return store.select.meta(name);
+      },
+      validation: (name) => {
+        nextUsed.add(makeDepKey("validation", name as PropertyKey));
+        return store.select.validation(name);
+      },
+      snapshot: (name) => {
+        nextUsed.add(makeDepKey("snapshot", name as PropertyKey));
+        return store.select.snapshot(name);
+      },
+      mounted: (name) => {
+        nextUsed.add(makeDepKey("mounted", name as PropertyKey));
+        return store.select.mounted(name);
+      },
+    };
+
+    const next = selector(trackingSelect, props);
+
+    // Snapshot dependency versions for the next run
+    const newVersions = new Map<DepKey, number>();
+    for (const k of nextUsed) {
+      newVersions.set(k, store.getDepVersion(k));
     }
-    const next = selector(store.select, props);
-    if (prev !== undefined && selectorEquality(prev, next)) {
-      lastVersionRef.current = currentVersion;
-      lastPropsRef.current = props;
-      return prev;
+
+    // Determine returned reference based on equality
+    const prevSelected = lastSelectedRef.current;
+    let result = next;
+    if (prevSelected !== undefined && selectorEquality(prevSelected, next)) {
+      result = prevSelected;
     }
-    lastVersionRef.current = currentVersion;
+
+    usedDepKeysRef.current = nextUsed;
+    lastDepVersionsRef.current = newVersions;
     lastPropsRef.current = props;
-    lastSelectedRef.current = next;
-    return next;
+    lastSelectedRef.current = result;
+
+    return result;
   }, [selectorEquality, propsEquality, props, selector, store]);
 
   const selected = useSyncExternalStore(
