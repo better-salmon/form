@@ -1,6 +1,6 @@
 import { createForm } from "@lib/create-form-hook";
 import type { Branded } from "@/types/types";
-import { shallow } from "@lib/shallow";
+import { useState } from "react";
 
 type Name = Branded<string, "name">;
 type Email = Branded<string, "email">;
@@ -13,6 +13,10 @@ type NameForm = {
 const { useField, useForm, defineField, useFormSelector, defineSelector } =
   createForm<NameForm>();
 
+function toggleLockButton(lockButton: boolean) {
+  return !lockButton;
+}
+
 export default function FormDemo() {
   const { Form } = useForm({
     defaultValues: {
@@ -21,8 +25,12 @@ export default function FormDemo() {
     },
   });
 
+  const [lockButton, setLockButton] = useState(false);
+  const [minLength, setMinLength] = useState(3);
+
   return (
     <Form className="mx-auto max-w-lg space-y-6">
+      <div className="flex gap-2"></div>
       <div className="space-y-4 p-6">
         <div className="mb-6">
           <h2 className="text-2xl font-bold">Form Demo</h2>
@@ -32,12 +40,39 @@ export default function FormDemo() {
         </div>
 
         <div className="space-y-4">
-          <NameField />
-          <EmailField />
+          <NameField minLength={minLength} />
+          <EmailField minLength={minLength} />
         </div>
-
         <div className="pt-4">
-          <SubmitButton />
+          <div className="mb-4 flex items-center gap-2">
+            <label htmlFor="minLength" className="text-sm font-medium">
+              Min length:
+            </label>
+            <input
+              id="minLength"
+              className="mr-2 rounded-md border-2 border-gray-300 p-2"
+              type="number"
+              min={1}
+              value={minLength}
+              onChange={(e) => {
+                setMinLength(e.target.valueAsNumber);
+              }}
+            />
+            <input
+              id="lockButton"
+              className="mr-2 rounded-md border-2 border-gray-300 p-2"
+              type="checkbox"
+              checked={lockButton}
+              onChange={() => {
+                setLockButton(toggleLockButton);
+              }}
+            />
+            <label htmlFor="lockButton" className="text-sm font-medium">
+              Lock button
+            </label>
+          </div>
+
+          <SubmitButton forceDisabled={lockButton} />
         </div>
       </div>
     </Form>
@@ -46,8 +81,10 @@ export default function FormDemo() {
 
 const nameFieldOptions = defineField({
   name: "name",
-  respond: (context) => {
-    if (context.value.length > 3) {
+  respond: (context, props: { minLength?: number } = {}) => {
+    const { minLength = 3 } = props;
+
+    if (context.value.length > minLength) {
       return context.helpers.validation.valid();
     }
 
@@ -57,8 +94,10 @@ const nameFieldOptions = defineField({
 
 const emailFieldOptions = defineField({
   name: "email",
-  respond: (context) => {
-    if (context.value.length > 3) {
+  respond: (context, props: { minLength?: number } = {}) => {
+    const { minLength = 3 } = props;
+
+    if (context.value.length > minLength) {
       return context.helpers.validation.valid();
     }
 
@@ -66,8 +105,10 @@ const emailFieldOptions = defineField({
   },
 });
 
-function NameField() {
-  const field = useField(nameFieldOptions);
+function NameField(props: Readonly<{ minLength?: number }>) {
+  const field = useField(nameFieldOptions, {
+    props,
+  });
 
   return (
     <label className="flex flex-col gap-2">
@@ -91,8 +132,10 @@ function NameField() {
   );
 }
 
-function EmailField() {
-  const field = useField(emailFieldOptions);
+function EmailField(props: Readonly<{ minLength?: number }>) {
+  const field = useField(emailFieldOptions, {
+    props,
+  });
 
   return (
     <label className="flex flex-col gap-2">
@@ -116,15 +159,25 @@ function EmailField() {
   );
 }
 
-const isFormValid = defineSelector((s) => {
-  return (
-    s.validation("name").type === "valid" &&
-    s.validation("email").type === "valid"
-  );
-});
+const isFormSubmittable = defineSelector(
+  (s, props: { forceDisabled?: boolean } = {}) => {
+    console.log("from selector props", props);
 
-function SubmitButton() {
-  const isEnabled = useFormSelector(isFormValid, shallow);
+    if (props.forceDisabled) {
+      return false;
+    }
+
+    return (
+      s.validation("name").type === "valid" &&
+      s.validation("email").type === "valid"
+    );
+  },
+);
+
+function SubmitButton(props: Readonly<{ forceDisabled?: boolean }>) {
+  const isEnabled = useFormSelector(isFormSubmittable, {
+    props,
+  });
 
   return (
     <button

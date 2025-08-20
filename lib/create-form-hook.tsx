@@ -26,12 +26,13 @@ type Prettify<T> = {
   // eslint-disable-next-line sonarjs/no-useless-intersection -- this is a common pattern for prettifying types
 } & {};
 
-export type FieldEvent = "change" | "blur" | "submit" | "mount";
+export type FieldEvent = "change" | "blur" | "submit" | "mount" | "props";
 const EVENTS = [
   "change",
   "blur",
   "submit",
   "mount",
+  "props",
 ] as const satisfies FieldEvent[];
 const DEFAULT_WATCHER_MAX_STEPS = 1000;
 const DEFAULT_DEBOUNCE_MS = 500;
@@ -194,9 +195,11 @@ type InternalFieldOptions<T extends DefaultValues, K extends keyof T, D> = {
   debounceMs?: number;
   respond?: (
     context: RespondContext<T, K, D> | RespondContextSync<T, K, D>,
+    props?: unknown,
   ) => FinalValidationStatus<D> | ValidationSchedule | void;
   respondAsync?: (
     context: RespondAsyncContext<T, K, D>,
+    props?: unknown,
   ) => Promise<FinalValidationStatus<D>>;
   watch: {
     self: Set<FieldEvent>;
@@ -225,9 +228,9 @@ type FormStore<T extends DefaultValues, D = unknown> = {
   getVersion: () => number;
   select: SelectHelpers<T, D>;
   mount: (fieldName: keyof T) => void;
-  registerOptions: <K extends keyof T>(
+  registerOptions: <K extends keyof T, P = unknown>(
     fieldName: K,
-    options: FieldOptions<T, K, D>,
+    options: FieldOptions<T, K, D, P>,
   ) => void;
   unregisterOptions: (fieldName: keyof T) => void;
   unmount: (fieldName: keyof T) => void;
@@ -239,6 +242,11 @@ type FormStore<T extends DefaultValues, D = unknown> = {
       incrementChanges?: boolean;
       dispatch?: boolean;
     },
+  ) => void;
+  setFieldProps: (
+    fieldName: keyof T,
+    props: unknown,
+    equality?: (a: unknown, b: unknown) => boolean,
   ) => void;
   blur: (fieldName: keyof T) => void;
   submit: (fields?: readonly (keyof T)[]) => void;
@@ -271,36 +279,27 @@ type UseFormOptions<T extends DefaultValues> = {
 
 type CreateFormResult<T extends DefaultValues, D = unknown> = {
   useForm: (options: UseFormOptions<T>) => UseFormReturn<T, D>;
-  useFormSelector: <S>(
-    selector: (s: SelectHelpers<T, D>) => S,
-    equality?: (a: S, b: S) => boolean,
+  useFormSelector: <S, P = unknown>(
+    selector: (s: SelectHelpers<T, D>, props?: P) => S,
+    options?: {
+      selectorEquality?: (a: S, b: S) => boolean;
+      propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
+      props?: P;
+    },
   ) => S;
-  useField: <K extends keyof T>(
-    options: FieldOptions<T, K, D>,
+  useField: <K extends keyof T, P = unknown>(
+    options: FieldOptions<T, K, D, P>,
+    propsOptions?: {
+      props?: P;
+      propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
+    },
   ) => Prettify<UseFieldReturn<T, K, D>>;
-  defineField: <K extends keyof T>(
-    options: FieldOptions<T, K, D>,
-  ) => FieldOptions<T, K, D>;
-  defineSelector: <S>(
-    selector: (s: SelectHelpers<T, D>) => S,
-  ) => (s: SelectHelpers<T, D>) => S;
-};
-
-type CreateSingletonFormResult<T extends DefaultValues, D = unknown> = {
-  useFormSelector: <S>(
-    selector: (s: SelectHelpers<T, D>) => S,
-    equality?: (a: S, b: S) => boolean,
-  ) => S;
-  useField: <K extends keyof T>(
-    options: FieldOptions<T, K, D>,
-  ) => Prettify<UseFieldReturn<T, K, D>>;
-  defineField: <K extends keyof T>(
-    options: FieldOptions<T, K, D>,
-  ) => FieldOptions<T, K, D>;
-  formApi: FormApi<T, D>;
-  defineSelector: <S>(
-    selector: (s: SelectHelpers<T, D>) => S,
-  ) => (s: SelectHelpers<T, D>) => S;
+  defineField: <K extends keyof T, P = unknown>(
+    options: FieldOptions<T, K, D, P>,
+  ) => FieldOptions<T, K, D, P>;
+  defineSelector: <S, P = unknown>(
+    selector: (s: SelectHelpers<T, D>, props?: P) => S,
+  ) => (s: SelectHelpers<T, D>, props?: P) => S;
 };
 
 // =====================================
@@ -420,6 +419,7 @@ type SyncOnlyFieldOptionsExtension<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
+  P = unknown,
 > = {
   standardSchema?: StandardSchemaV1<T[K]>;
   watch?: {
@@ -430,6 +430,7 @@ type SyncOnlyFieldOptionsExtension<
   };
   respond: (
     context: Prettify<RespondContextSync<T, K, D>>,
+    props?: P,
   ) => FinalValidationStatus<D> | void;
   respondAsync?: never;
   debounceMs?: never;
@@ -439,6 +440,7 @@ type AsyncOnlyFieldOptionsExtension<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
+  P = unknown,
 > = {
   standardSchema?: StandardSchemaV1<T[K]>;
   watch?: {
@@ -450,6 +452,7 @@ type AsyncOnlyFieldOptionsExtension<
   respond?: never;
   respondAsync: (
     context: Prettify<RespondAsyncContext<T, K, D>>,
+    props?: P,
   ) => Promise<FinalValidationStatus<D>>;
   debounceMs?: number;
 };
@@ -458,6 +461,7 @@ type SyncAsyncFieldOptionsExtension<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
+  P = unknown,
 > = {
   standardSchema?: StandardSchemaV1<T[K]>;
   watch?: {
@@ -468,9 +472,11 @@ type SyncAsyncFieldOptionsExtension<
   };
   respond: (
     context: Prettify<RespondContext<T, K, D>>,
+    props?: P,
   ) => FinalValidationStatus<D> | ValidationSchedule | void;
   respondAsync: (
     context: Prettify<RespondAsyncContext<T, K, D>>,
+    props?: P,
   ) => Promise<FinalValidationStatus<D>>;
   debounceMs?: number;
 };
@@ -487,13 +493,14 @@ export type FieldOptions<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
+  P = unknown,
 > = Prettify<
   {
     name: K;
   } & (
-    | SyncOnlyFieldOptionsExtension<T, K, D>
-    | AsyncOnlyFieldOptionsExtension<T, K, D>
-    | SyncAsyncFieldOptionsExtension<T, K, D>
+    | SyncOnlyFieldOptionsExtension<T, K, D, P>
+    | AsyncOnlyFieldOptionsExtension<T, K, D, P>
+    | SyncAsyncFieldOptionsExtension<T, K, D, P>
     | NoValidationFieldOptionsExtension
   )
 >;
@@ -540,9 +547,14 @@ function run(debounceMs?: number): ValidationFlowForce {
   } as ValidationFlowForce;
 }
 
-function normalizeFieldOptions<T extends DefaultValues, K extends keyof T, D>(
+function normalizeFieldOptions<
+  T extends DefaultValues,
+  K extends keyof T,
+  D,
+  P,
+>(
   fieldName: K,
-  options: FieldOptions<T, K, D>,
+  options: FieldOptions<T, K, D, P>,
 ): InternalFieldOptions<T, K, D> {
   const triggersSelf = new Set<FieldEvent>(options.watch?.self ?? EVENTS);
   const from = new Map<Exclude<keyof T, K>, Set<FieldEvent>>();
@@ -564,9 +576,11 @@ function normalizeFieldOptions<T extends DefaultValues, K extends keyof T, D>(
     debounceMs: options.debounceMs,
     respond: options.respond as (
       context: RespondContext<T, K, D> | RespondContextSync<T, K, D>,
+      props?: unknown,
     ) => FinalValidationStatus<D> | ValidationSchedule | void,
     respondAsync: options.respondAsync as (
       context: RespondAsyncContext<T, K, D>,
+      props?: unknown,
     ) => Promise<FinalValidationStatus<D>>,
     watch: { self: triggersSelf, from },
   } satisfies InternalFieldOptions<T, K, D>;
@@ -723,6 +737,8 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   const lastValidatedValue = new Map<keyof T, T[keyof T]>();
   const lastValidatedChanges = new Map<keyof T, number>();
   const validationIds = new Map<keyof T, number>();
+  const fieldPropsMap = new Map<keyof T, unknown>();
+  const fieldMountCounts = new Map<keyof T, number>();
 
   const maxDispatchSteps = normalizeNumber(options.maxDispatchSteps, {
     fallback: DEFAULT_WATCHER_MAX_STEPS,
@@ -924,22 +940,26 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     const currentFieldView = getSnapshot(fieldName);
     const standardSchema = options.standardSchema;
 
+    const props = fieldPropsMap.get(fieldName);
     options
-      .respondAsync({
-        action,
-        cause,
-        value,
-        current: currentFieldView,
-        signal,
-        helpers: {
-          validation: validationHelper,
-          validateWithSchemaAsync: async () =>
-            standardSchema
-              ? await standardValidateAsync(standardSchema, value)
-              : undefined,
+      .respondAsync(
+        {
+          action,
+          cause,
+          value,
+          current: currentFieldView,
+          signal,
+          helpers: {
+            validation: validationHelper,
+            validateWithSchemaAsync: async () =>
+              standardSchema
+                ? await standardValidateAsync(standardSchema, value)
+                : undefined,
+          },
+          form,
         },
-        form,
-      })
+        props,
+      )
       .then((result) => {
         if (abortController.signal.aborted) {
           return;
@@ -1054,6 +1074,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     const standardSchema = options.standardSchema;
 
     let result: FinalValidationStatus<D> | ValidationSchedule | void;
+    const props = fieldPropsMap.get(target);
     if (options.respondAsync) {
       const context: RespondContext<T, K, D> = {
         action,
@@ -1072,7 +1093,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
               : undefined,
         },
       };
-      result = options.respond?.(context);
+      result = options.respond?.(context, props);
     } else {
       const ctxSync: RespondContextSync<T, K, D> = {
         action,
@@ -1090,7 +1111,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
               : undefined,
         },
       };
-      result = options.respond?.(ctxSync);
+      result = options.respond?.(ctxSync, props);
     }
 
     let outcome: FinalValidationStatus<D> | ValidationSchedule =
@@ -1363,9 +1384,9 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   // -- Options registration lifecycle
-  function setFieldOptions<K extends keyof T>(
+  function setFieldOptions<K extends keyof T, P = unknown>(
     fieldName: K,
-    options: FieldOptions<T, K, D> | undefined,
+    options: FieldOptions<T, K, D, P> | undefined,
   ) {
     // Wrap in a dispatch transaction so any state changes (e.g. settling
     // pending/validating when switching off async) notify subscribers.
@@ -1374,7 +1395,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         unregisterFieldOptions(fieldName);
         return;
       }
-      const internal = normalizeFieldOptions(fieldName, options);
+      const internal = normalizeFieldOptions<T, K, D, P>(fieldName, options);
       fieldOptions.set(fieldName, internal);
       registerReactionsFor(fieldName, internal);
       settleIfAsyncDisabled(fieldName, internal);
@@ -1383,6 +1404,8 @@ function createFormStore<T extends DefaultValues, D = unknown>(
 
   function mount(fieldName: keyof T) {
     runInDispatchTransaction(() => {
+      const nextCount = (fieldMountCounts.get(fieldName) ?? 0) + 1;
+      fieldMountCounts.set(fieldName, nextCount);
       if (!mountedFields.has(fieldName)) {
         mountedFields.add(fieldName);
         const entry = getFieldEntry(fieldName);
@@ -1394,22 +1417,35 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         } as FieldSnapshot<T[typeof fieldName], D>;
         markDirty();
         dispatch(fieldName, "mount");
+      } else if (process.env.NODE_ENV !== "production" && nextCount > 1) {
+        console.warn(
+          `useField: multiple mounts detected for field "${String(
+            fieldName,
+          )}" within the same store. This can cause unexpected behavior.`,
+        );
       }
     });
   }
 
   function unmount(fieldName: keyof T) {
     runInDispatchTransaction(() => {
-      if (mountedFields.has(fieldName)) {
-        mountedFields.delete(fieldName);
-        const entry = getFieldEntry(fieldName);
-        entry.snapshot = {
-          value: entry.value,
-          meta: entry.meta,
-          validation: entry.validation,
-          isMounted: false,
-        } as FieldSnapshot<T[typeof fieldName], D>;
-        markDirty();
+      const current = fieldMountCounts.get(fieldName) ?? 0;
+      const next = Math.max(0, current - 1);
+      if (next === 0) {
+        fieldMountCounts.delete(fieldName);
+        if (mountedFields.has(fieldName)) {
+          mountedFields.delete(fieldName);
+          const entry = getFieldEntry(fieldName);
+          entry.snapshot = {
+            value: entry.value,
+            meta: entry.meta,
+            validation: entry.validation,
+            isMounted: false,
+          } as FieldSnapshot<T[typeof fieldName], D>;
+          markDirty();
+        }
+      } else {
+        fieldMountCounts.set(fieldName, next);
       }
       cleanupValidation(fieldName);
     });
@@ -1419,9 +1455,9 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     dispatch(fieldName, "blur");
   }
 
-  function registerOptions<K extends keyof T>(
+  function registerOptions<K extends keyof T, P = unknown>(
     fieldName: K,
-    options: FieldOptions<T, K, D>,
+    options: FieldOptions<T, K, D, P>,
   ) {
     setFieldOptions(fieldName, options);
   }
@@ -1436,6 +1472,20 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     const field = getFieldEntry(fieldName);
     // Return cached snapshot to preserve reference stability
     return field.snapshot;
+  }
+
+  function setFieldProps(
+    fieldName: keyof T,
+    props: unknown,
+    equality: (a: unknown, b: unknown) => boolean = shallow,
+  ) {
+    const prev = fieldPropsMap.get(fieldName);
+    if (equality(prev, props)) {
+      return;
+    }
+    fieldPropsMap.set(fieldName, props);
+    // Dispatch props event to allow respond/respondAsync to consider new props
+    dispatch(fieldName, "props");
   }
 
   // -- Select helpers (first-class)
@@ -1478,6 +1528,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     mount,
     unmount,
     setValue,
+    setFieldProps,
     reset,
     submit,
   };
@@ -1489,15 +1540,23 @@ function createFormStore<T extends DefaultValues, D = unknown>(
 // Hooks helpers
 // =====================================
 
-function defineField<T extends DefaultValues, K extends keyof T, D = unknown>(
-  options: FieldOptions<T, K, D>,
-): FieldOptions<T, K, D> {
+function defineField<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+  P = undefined,
+>(options: FieldOptions<T, K, D, P>): FieldOptions<T, K, D, P> {
   return options;
 }
 
-function defineSelector<T extends DefaultValues, D = unknown, S = unknown>(
-  selector: (s: SelectHelpers<T, D>) => S,
-): (s: SelectHelpers<T, D>) => S {
+function defineSelector<
+  T extends DefaultValues,
+  D = unknown,
+  S = unknown,
+  P = undefined,
+>(
+  selector: (s: SelectHelpers<T, D>, props?: P) => S,
+): (s: SelectHelpers<T, D>, props?: P) => S {
   return selector;
 }
 
@@ -1518,54 +1577,57 @@ export function useFormSelector<
   T extends DefaultValues,
   D = unknown,
   S = unknown,
+  P = unknown,
 >(
-  selector: (s: SelectHelpers<T, D>) => S,
-  equality: (a: S, b: S) => boolean = Object.is,
+  selector: (s: SelectHelpers<T, D>, props?: P) => S,
+  options?: {
+    selectorEquality?: (a: S, b: S) => boolean;
+    propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
+    props?: P;
+  },
 ): S {
   const store = use(StoreContext) as FormStore<T, D> | null;
   invariant(store, "useFormSelector must be used within a FormProvider");
 
+  const {
+    selectorEquality = shallow,
+    propsEquality = shallow,
+    props,
+  } = options ?? {};
+
   const lastSelectedRef = useRef<S | undefined>(undefined);
   const lastVersionRef = useRef<number>(-1);
+  const lastPropsRef = useRef<P | undefined>(undefined);
 
   const getSelected = useCallback(() => {
     const currentVersion = store.getVersion();
     const prev = lastSelectedRef.current;
-    if (lastVersionRef.current === currentVersion && prev !== undefined) {
+    const propsChanged = !propsEquality(lastPropsRef.current, props);
+
+    if (
+      !propsChanged &&
+      lastVersionRef.current === currentVersion &&
+      prev !== undefined
+    ) {
       return prev;
     }
-    const next = selector(store.select);
-    if (prev !== undefined && equality(prev, next)) {
+    const next = selector(store.select, props);
+    if (prev !== undefined && selectorEquality(prev, next)) {
       lastVersionRef.current = currentVersion;
+      lastPropsRef.current = props;
       return prev;
     }
     lastVersionRef.current = currentVersion;
+    lastPropsRef.current = props;
     lastSelectedRef.current = next;
     return next;
-  }, [store, selector, equality]);
+  }, [selectorEquality, propsEquality, props, selector, store]);
 
   const selected = useSyncExternalStore(
     store.subscribe,
     getSelected,
     getSelected,
   );
-
-  // Dev-only warning: not conditional hook usage; ref is declared unconditionally
-  const devWarnedRef = useRef(false);
-  if (
-    process.env.NODE_ENV !== "production" &&
-    !devWarnedRef.current &&
-    equality === Object.is
-  ) {
-    // eslint-disable-next-line sonarjs/different-types-comparison
-    const isObject = selected !== null && typeof selected === "object";
-    if (isObject) {
-      console.warn(
-        "useFormSelector: selector returned a non-primitive without a custom equality. Consider passing shallow to avoid unnecessary re-renders.",
-      );
-      devWarnedRef.current = true;
-    }
-  }
 
   return selected;
 }
@@ -1574,8 +1636,17 @@ export function useFormSelector<
 // Hooks
 // =====================================
 
-function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
-  options: FieldOptions<T, K, D>,
+function useField<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+  P = unknown,
+>(
+  options: FieldOptions<T, K, D, P>,
+  propsOptions?: {
+    props?: P;
+    propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
+  },
 ): Prettify<UseFieldReturn<T, K, D>> {
   const store = use(StoreContext) as FormStore<T, D> | null;
 
@@ -1583,6 +1654,8 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
 
   const { name, debounceMs, watch, respond, respondAsync, standardSchema } =
     options;
+
+  const { props, propsEquality = shallow } = propsOptions ?? {};
 
   useIsomorphicEffect(() => {
     store.registerOptions(name, {
@@ -1592,12 +1665,20 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
       watch,
       respond,
       standardSchema,
-    } as FieldOptions<T, K, D>);
+    } as FieldOptions<T, K, D, P>);
 
     return () => {
       store.unregisterOptions(name);
     };
   }, [debounceMs, name, watch, respond, respondAsync, standardSchema, store]);
+
+  useIsomorphicEffect(() => {
+    store.setFieldProps(
+      name,
+      props,
+      propsEquality as unknown as (a: unknown, b: unknown) => boolean,
+    );
+  }, [name, props, propsEquality, store]);
 
   useIsomorphicEffect(() => {
     store.mount(name);
@@ -1615,14 +1696,11 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
       meta: FieldMeta;
       validation: ValidationStatus<D>;
     }
-  >(
-    (s) => ({
-      value: s.value(name),
-      meta: s.meta(name),
-      validation: s.validation(name),
-    }),
-    shallow,
-  );
+  >((s) => ({
+    value: s.value(name),
+    meta: s.meta(name),
+    validation: s.validation(name),
+  }));
 
   const setValue = useCallback(
     (value: T[K]) => {
@@ -1680,131 +1758,5 @@ export function createForm<
     useField,
     useForm,
     defineSelector,
-  };
-}
-
-export function experimental_createSingletonForm<
-  T extends DefaultValues,
-  D = unknown,
->(options: UseFormOptions<T>): CreateSingletonFormResult<T, D> {
-  const store = createFormStore<T, D>(options);
-
-  function useSingletonFormSelector<S>(
-    selector: (s: SelectHelpers<T, D>) => S,
-    equality: (a: S, b: S) => boolean = Object.is,
-  ): S {
-    const lastSelectedRef = useRef<S | undefined>(undefined);
-    const lastVersionRef = useRef<number>(-1);
-
-    const getSelected = useCallback(() => {
-      const currentVersion = store.getVersion();
-      const prev = lastSelectedRef.current;
-      if (lastVersionRef.current === currentVersion && prev !== undefined) {
-        return prev;
-      }
-      const next = selector(store.select);
-      if (prev !== undefined && equality(prev, next)) {
-        lastVersionRef.current = currentVersion;
-        return prev;
-      }
-      lastVersionRef.current = currentVersion;
-      lastSelectedRef.current = next;
-      return next;
-    }, [equality, selector]);
-
-    const selected = useSyncExternalStore(
-      store.subscribe,
-      getSelected,
-      getSelected,
-    );
-
-    // Dev-only warning: not conditional hook usage; ref is declared unconditionally
-    const devWarnedRef = useRef(false);
-    if (
-      process.env.NODE_ENV !== "production" &&
-      !devWarnedRef.current &&
-      equality === Object.is
-    ) {
-      // eslint-disable-next-line sonarjs/different-types-comparison
-      const isObject = selected !== null && typeof selected === "object";
-      if (isObject) {
-        console.warn(
-          "useFormSelector: selector returned a non-primitive without a custom equality. Consider passing shallow to avoid unnecessary re-renders.",
-        );
-        devWarnedRef.current = true;
-      }
-    }
-
-    return selected;
-  }
-
-  function useSingletonField<K extends keyof T>(
-    options: FieldOptions<T, K, D>,
-  ): Prettify<UseFieldReturn<T, K, D>> {
-    const { name, debounceMs, watch, respond, respondAsync, standardSchema } =
-      options;
-
-    useIsomorphicEffect(() => {
-      store.registerOptions(name, {
-        name,
-        debounceMs,
-        respondAsync,
-        watch,
-        respond,
-        standardSchema,
-      } as FieldOptions<T, K, D>);
-
-      return () => {
-        store.unregisterOptions(name);
-      };
-    }, [debounceMs, name, respond, respondAsync, standardSchema, watch]);
-
-    useIsomorphicEffect(() => {
-      store.mount(name);
-
-      return () => {
-        store.unmount(name);
-      };
-    }, [name]);
-
-    const { value, meta, validation } = useSingletonFormSelector(
-      (s) => ({
-        value: s.value(name),
-        meta: s.meta(name),
-        validation: s.validation(name),
-      }),
-      shallow,
-    );
-
-    const setValue = useCallback(
-      (value: T[K]) => {
-        store.setValue(name, value);
-      },
-      [name],
-    );
-
-    const blur = useCallback(() => {
-      store.blur(name);
-    }, [name]);
-
-    const formApi = useMemo(() => store.formApi, []);
-
-    return {
-      name,
-      value,
-      meta,
-      validation,
-      setValue,
-      blur,
-      formApi,
-    };
-  }
-
-  return {
-    defineField: (options) => options,
-    defineSelector: (selector) => selector,
-    formApi: store.formApi,
-    useField: useSingletonField,
-    useFormSelector: useSingletonFormSelector,
   };
 }

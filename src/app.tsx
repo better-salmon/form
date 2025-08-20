@@ -11,13 +11,6 @@ const DEMOS = [
     demonstrateIsolation: false,
   },
   {
-    id: "singleton-form-demo",
-    name: "Singleton Form Demo",
-    component: lazy(() => import("@/demos/singleton-form-demo")),
-    description: "Simple form with name and email fields",
-    demonstrateIsolation: true,
-  },
-  {
     id: "sync-respond-demo",
     name: "Sync Respond Demo",
     component: lazy(() => import("@/demos/sync-respond-demo")),
@@ -182,7 +175,6 @@ function App() {
                   }
                 >
                   <ActiveComponent />
-                  {activeDemoInfo?.demonstrateIsolation && <ActiveComponent />}
                 </Suspense>
               )}
             </div>
