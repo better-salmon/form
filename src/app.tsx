@@ -24,6 +24,13 @@ const DEMOS = [
     description: "Toggle a field from async (debounced) to sync while pending",
     demonstrateIsolation: false,
   },
+  {
+    id: "graph-cycles-demo",
+    name: "Graph Cycles",
+    component: lazy(() => import("@/demos/graph-cycles-demo")),
+    description: "Cyclic graphs: A↔B and A→B→C→A with visited-edge cutoff",
+    demonstrateIsolation: false,
+  },
 ] as const;
 
 type DemoNames = (typeof DEMOS)[number]["id"];

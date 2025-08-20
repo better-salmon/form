@@ -1,4 +1,3 @@
-/* eslint-disable sonarjs/different-types-comparison */
 export function shallow<T>(a: T, b: T): boolean {
   if (Object.is(a, b)) {
     return true;

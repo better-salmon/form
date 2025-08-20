@@ -76,6 +76,7 @@ export default tseslint.config([
       "sonarjs/function-return-type": "off",
       // TODO: remove this override when finalizing the work on the lib
       "sonarjs/no-nested-functions": ["error", { threshold: 5 }],
+      "sonarjs/different-types-comparison": "off",
     },
   },
   // Vitest rules scoped to test files
