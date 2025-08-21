@@ -1,7 +1,7 @@
 import { defineConfig, type UserConfig } from "tsdown";
 
 export default defineConfig(({ watch }) => {
-  const minify = process.env.MINIFY === "true";
+  const minify = process.env["MINIFY"] === "true";
 
   const testEntries = [
     "!src/**/*.test.ts",

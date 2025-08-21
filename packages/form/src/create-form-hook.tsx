@@ -1234,7 +1234,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         ) {
           watcherTransaction.bailOut = true;
 
-          if (process.env.NODE_ENV !== "production") {
+          if (process.env["NODE_ENV"] !== "production") {
             console.warn(
               "Dispatch chain exceeded max steps; breaking to avoid a loop",
               {
@@ -1481,7 +1481,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         mountedFields.add(fieldName);
         updateSnapshotAndDeps(fieldName, ["mounted"]);
         dispatch(fieldName, "mount");
-      } else if (process.env.NODE_ENV !== "production" && nextCount > 1) {
+      } else if (process.env["NODE_ENV"] !== "production" && nextCount > 1) {
         console.warn(
           `useField: multiple mounts detected for field "${String(
             fieldName,

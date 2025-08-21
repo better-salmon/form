@@ -18,8 +18,6 @@
   },
   "devDependencies": {
     "@playwright/test": "1.55.0",
-    "@tsconfig/node-ts": "23.6.1",
-    "@tsconfig/node24": "24.0.1",
     "@types/node": "24.3.0",
     "playwright": "1.55.0",
     "prettier": "3.6.2",

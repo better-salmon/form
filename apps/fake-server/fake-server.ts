@@ -9,7 +9,9 @@ const server = createServer((req, res) => {
   const query = parsedUrl.query;
 
   // Parse delay from query params
-  const delay = query.delay ? Number.parseInt(query.delay as string, 10) : 0;
+  const delay = query["delay"]
+    ? Number.parseInt(query["delay"] as string, 10)
+    : 0;
 
   // Set CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");

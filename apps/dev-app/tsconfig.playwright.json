@@ -17,6 +17,7 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
+    "noPropertyAccessFromIndexSignature": true,
     "types": ["node", "@playwright/test"]
   },
   "include": ["test/e2e/**/*.ts"]
