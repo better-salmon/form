@@ -246,10 +246,10 @@ type FormStore<T extends DefaultValues, D = unknown> = {
       dispatch?: boolean;
     },
   ) => void;
-  setFieldProps: (
+  setFieldProps: <P>(
     fieldName: keyof T,
-    props: unknown,
-    equality?: (a: unknown, b: unknown) => boolean,
+    props: P | undefined,
+    equality?: (a: P | undefined, b: P | undefined) => boolean,
   ) => void;
   blur: (fieldName: keyof T) => void;
   submit: (fields?: readonly (keyof T)[]) => void;
@@ -410,7 +410,7 @@ export type RespondContext<
   };
 };
 
-// Sync variant: identical to RespondContext but without async helpers on validation
+// Sync-only variant of RespondContext without the schedule helper (no async flow control)
 export type RespondContextSync<
   T extends DefaultValues,
   K extends keyof T,
@@ -1531,12 +1531,12 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     return field.snapshot;
   }
 
-  function setFieldProps(
+  function setFieldProps<P>(
     fieldName: keyof T,
-    props: unknown,
-    equality: (a: unknown, b: unknown) => boolean = shallow,
+    props: P | undefined,
+    equality: (a: P | undefined, b: P | undefined) => boolean = shallow,
   ) {
-    const prev = fieldPropsMap.get(fieldName);
+    const prev = fieldPropsMap.get(fieldName) as P | undefined;
     if (equality(prev, props)) {
       return;
     }
@@ -1802,11 +1802,7 @@ function useField<
   }, [debounceMs, name, watch, respond, respondAsync, standardSchema, store]);
 
   useIsomorphicEffect(() => {
-    store.setFieldProps(
-      name,
-      props,
-      propsEquality as unknown as (a: unknown, b: unknown) => boolean,
-    );
+    store.setFieldProps(name, props, propsEquality);
   }, [name, props, propsEquality, store]);
 
   useIsomorphicEffect(() => {
