@@ -20,5 +20,5 @@
     "noUncheckedSideEffectImports": true,
     "types": ["node"]
   },
-  "include": ["tsdown.config.ts"]
+  "include": ["tsdown.config.ts", "vitest.config.ts"]
 }

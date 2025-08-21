@@ -8,7 +8,9 @@
     "dev": "turbo dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "turbo lint"
+    "lint": "turbo lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "24.3.0",
