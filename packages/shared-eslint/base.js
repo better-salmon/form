@@ -88,6 +88,6 @@ export default tseslint.config([
   },
   {
     extends: [playwright.configs["flat/recommended"]],
-    files: ["tests/e2e/**/*.ts"],
+    files: ["**/test/e2e/*.spec.ts"],
   },
 ]);
