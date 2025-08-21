@@ -1,4 +1,5 @@
 ---
+globs: packages/form/**/*.test-d.ts
 alwaysApply: false
 ---
 
