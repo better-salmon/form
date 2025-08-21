@@ -6,11 +6,7 @@ export default defineConfig([
     extends: [base],
     languageOptions: {
       parserOptions: {
-        project: [
-          "./tsconfig.lib.json",
-          "./tsconfig.lib.test.json",
-          "./tsconfig.node.json",
-        ],
+        project: ["./tsconfig.json"],
         tsconfigRootDir: import.meta.dirname,
       },
     },

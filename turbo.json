@@ -8,7 +8,7 @@
       "outputs": ["dist-lib/**", "dist/**", "dist-ssr/**", "build/**"]
     },
     "lint": {
-      "dependsOn": ["^lint"]
+      "dependsOn": ["form#build", "^lint"]
     },
     "check-types": {
       "dependsOn": ["^check-types"]
