@@ -1,4 +1,4 @@
-import { createForm } from "@lib/create-form-hook";
+import { createForm } from "form";
 import type { Branded } from "@/types/types";
 
 type Password = Branded<string, "password">;

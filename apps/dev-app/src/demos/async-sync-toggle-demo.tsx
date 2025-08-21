@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createForm, type FieldOptions } from "@lib/create-form-hook";
+import { createForm, type FieldOptions } from "form";
 import { cn } from "@/utils/cn";
 
 type DemoForm = {

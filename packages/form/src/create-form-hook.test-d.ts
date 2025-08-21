@@ -4,10 +4,10 @@
 /* eslint-disable sonarjs/assertions-in-tests */
 
 import { describe, expectTypeOf, it } from "vitest";
-import { createForm } from "@lib/create-form-hook";
-import type { RespondContext } from "@lib/create-form-hook";
-import type { FieldEvent } from "@lib/create-form-hook";
-import type { UseFormReturn } from "@lib/create-form-hook";
+import { createForm } from "@form/create-form-hook";
+import type { RespondContext } from "@form/create-form-hook";
+import type { FieldEvent } from "@form/create-form-hook";
+import type { UseFormReturn } from "@form/create-form-hook";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 describe("defineField option variants", () => {

@@ -9,15 +9,15 @@ import {
   useSyncExternalStore,
   useRef,
 } from "react";
-import { shallow } from "@lib/shallow";
-import { deepEqual } from "@lib/deep-equal";
-import { normalizeDebounceMs, normalizeNumber } from "@lib/normalize-number";
+import { shallow } from "@form/shallow";
+import { deepEqual } from "@form/deep-equal";
+import { normalizeDebounceMs, normalizeNumber } from "@form/normalize-number";
 import {
   standardValidate,
   standardValidateAsync,
-} from "@lib/standard-validate";
+} from "@form/standard-validate";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import { useIsomorphicEffect } from "@lib/use-isomorphic-effect";
+import { useIsomorphicEffect } from "@form/use-isomorphic-effect";
 
 // =====================================
 // Domain Types and Constants

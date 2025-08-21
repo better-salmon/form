@@ -1,4 +1,4 @@
-import { createForm } from "@lib/create-form-hook";
+import { createForm } from "form";
 
 type GraphForm = {
   a2: string;
