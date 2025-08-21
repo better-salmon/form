@@ -1,8 +1,6 @@
 # Form Hook
 
-Experimental, signals-powered form hook library for React 19, inspired by [TanStack Form](https://tanstack.com/form/latest).
-
-Zero runtime dependencies.
+Experimental zero-deps form hook library for React 19, inspired by [TanStack Form](https://tanstack.com/form/latest).
 
 - Very strong typing
 - Sync and async validation (debounced, cancelable)
