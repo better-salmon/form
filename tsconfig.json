@@ -1,11 +1,28 @@
 {
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" },
-    { "path": "./tsconfig.lib.json" },
-    { "path": "./tsconfig.fake.json" },
-    { "path": "./tsconfig.lib.test.json" },
-    { "path": "./tsconfig.playwright.json" }
-  ]
+  "compilerOptions": {
+    "noEmit": true,
+
+    // // Environment Settings
+    "module": "nodenext",
+    "target": "esnext",
+
+    // // Stricter Typechecking Options
+    "noUncheckedIndexedAccess": true,
+
+    // // Style Options
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+
+    // // Recommended Options
+    "strict": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true
+  },
+  "include": ["./playwright.config.ts", "./vitest.config.ts"]
 }

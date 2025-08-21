@@ -10,4 +10,20 @@ alwaysApply: true
 
 ## Git operations (Git MCP)
 
-- Use the Git MCP to inspect diffs, stage files, create branches, and commit edits to `.cursor/rules/*.mdc` and source files.
+- **Default behavior**: Use Git only for read-only operations. Prefer Git MCP; CLI is allowed when necessary.
+  - Allowed by default: `status`, `diff` (unstaged/staged), `log`, `show`, branch/commit comparisons.
+  - When using CLI, ensure non-interactive usage and append `| cat` to paged outputs.
+
+- **No mutating Git operations unless explicitly requested by the user**:
+  - Do not run: `add`, `commit`, `restore`, `reset`, `rm`, `mv`, `merge`, `rebase`, `cherry-pick`, `stash`, `tag`, `push`, `pull`, `fetch --prune`, `switch`/`checkout` that changes branches, or any force operations.
+
+- **When the user explicitly asks for a mutating operation**:
+  - Proceed without additional confirmation; prefer Git MCP for the action and fall back to CLI only if needed.
+  - Use clear commit messages and avoid pushing unless the user explicitly requests it.
+
+- **After making code edits**: It’s OK to show read-only diffs/status to summarize changes. Do not auto-stage, commit, or create branches unless asked.
+
+- **Branch policy**:
+  - Do not create or rename branches for generated changes.
+  - Operate only on branches created by the user.
+  - Do not switch branches unless explicitly requested.

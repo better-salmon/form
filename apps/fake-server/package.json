@@ -1,0 +1,18 @@
+{
+  "name": "fake-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check-types": "tsc",
+    "dev": "node --watch fake-server.ts",
+    "lint": "eslint --max-warnings 0 .",
+    "start": "node fake-server.ts"
+  },
+  "devDependencies": {
+    "@repo/shared-eslint": "workspace:*",
+    "@types/node": "24.3.0",
+    "eslint": "9.33.0",
+    "typescript": "5.9.2"
+  }
+}

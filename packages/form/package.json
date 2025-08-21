@@ -1,0 +1,38 @@
+{
+  "name": "form",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/create-form-hook.d.ts",
+      "import": "./dist/create-form-hook.js",
+      "default": "./dist/create-form-hook.js"
+    }
+  },
+  "module": "./dist/create-form-hook.js",
+  "types": "./dist/create-form-hook.d.ts",
+  "scripts": {
+    "build": "tsdown",
+    "build:minify": "MINIFY=true tsdown",
+    "check-types": "tsc -p tsconfig.lib.json && tsc -p tsconfig.lib.test.json && tsc -p tsconfig.node.json",
+    "dev": "tsdown --watch",
+    "lint": "eslint --max-warnings 0 .",
+    "test": "vitest run --typecheck"
+  },
+  "dependencies": {
+    "@standard-schema/spec": "1.0.0"
+  },
+  "devDependencies": {
+    "@repo/shared-eslint": "workspace:*",
+    "@types/node": "24.3.0",
+    "@types/react": "19.1.10",
+    "eslint": "9.33.0",
+    "tsdown": "0.14.1",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  },
+  "peerDependencies": {
+    "react": "^19"
+  }
+}

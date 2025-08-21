@@ -1,0 +1,68 @@
+---
+alwaysApply: true
+description: Guide for running and filtering jobs and scripts in this pnpm + turbo monorepo
+---
+
+### Monorepo jobs guide (pnpm + turbo)
+
+This repository is a pnpm workspace orchestrated by Turbo.
+
+### Conventions for the assistant
+
+- Always run from the repo root so workspace and Turbo resolution work correctly
+- Prefer Turbo filters for cross-package orchestration
+- Usually `pnpm dev` is already running in the background, prefer to skip
+
+### Core workspace commands
+
+```bash
+# Build everything
+pnpm build
+
+# Type-check everything
+pnpm check-types
+
+# Lint everything
+pnpm lint
+
+# Run tests across all projects
+pnpm test
+
+# Watch tests across all projects
+pnpm test:watch
+
+# Start all dev tasks (persistent; Turbo runs them in parallel).
+pnpm dev
+
+# Install deps (package or app)
+pnpm -F form add <package>
+
+# Install deps (root)
+pnpm --workspace-root add -D <package>
+```
+
+### Targeting specific packages
+
+Use Turbo filters to scope tasks.
+
+```bash
+# Library: packages/form
+pnpm build -F form
+pnpm dev -F form
+
+# App: apps/dev-app
+pnpm build -F dev-app
+pnpm dev -F dev-app
+
+# Service: apps/fake-server
+pnpm dev -F fake-server
+```
+
+### Tests: run a subset
+
+The root Vitest config defines projects for `packages/*` and `apps/*`.
+
+```bash
+# Run tests only for the library
+pnpm test --project form
+```
