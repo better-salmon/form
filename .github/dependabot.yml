@@ -5,8 +5,6 @@ updates:
     schedule:
       interval: "daily"
     open-pull-requests-limit: 10
-    reviewers:
-      - "@me"
     assignees:
       - "@me"
     commit-message:
@@ -28,8 +26,6 @@ updates:
     schedule:
       interval: "daily"
     open-pull-requests-limit: 10
-    reviewers:
-      - "@me"
     assignees:
       - "@me"
     commit-message:

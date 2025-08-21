@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "turbo build",
+    "check-types": "turbo check-types",
     "dev": "turbo dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

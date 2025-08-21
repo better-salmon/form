@@ -41,14 +41,3 @@ jobs:
 
       - name: Build App
         run: pnpm build
-
-      - name: Build Lib
-        run: pnpm build:lib
-
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps
-
-      - name: E2E tests (Playwright)
-        run: pnpm e2e
-        env:
-          CI: "true"

@@ -15,7 +15,7 @@
   "scripts": {
     "build": "tsdown",
     "build:minify": "MINIFY=true tsdown",
-    "check-types": "tsc -p tsconfig.lib.json && tsc -p tsconfig.lib.test.json",
+    "check-types": "tsc -p tsconfig.lib.json && tsc -p tsconfig.lib.test.json && tsc -p tsconfig.node.json",
     "dev": "tsdown --watch",
     "lint": "eslint --max-warnings 0 .",
     "test": "vitest run --typecheck"

@@ -11,7 +11,7 @@
       "dependsOn": ["form#build", "^lint"]
     },
     "check-types": {
-      "dependsOn": ["^check-types"]
+      "dependsOn": ["form#build", "^check-types"]
     },
     "dev": {
       "cache": false,
