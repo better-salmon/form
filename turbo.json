@@ -5,7 +5,7 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["dist-lib/**", "dist/**", "dist-ssr/**", "build/**"]
+      "outputs": ["dist/**", "dist-ssr/**", "build/**"]
     },
     "lint": {
       "dependsOn": ["form#build", "^lint"]

@@ -17,7 +17,6 @@ import playwright from "eslint-plugin-playwright";
 export default tseslint.config([
   globalIgnores([
     "**/dist",
-    "**/dist-lib",
     "**/node_modules",
     "**/dist-ssr",
     "**/test-results",

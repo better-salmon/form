@@ -9,7 +9,6 @@ Use this guide to write static type tests for our library. These tests are not e
 ## Naming and Location
 
 - **File naming**: place type tests in files ending with `*.test-d.ts`.
-- **Config**: See [vitest.config.ts](mdc:vitest.config.ts) for `test.typecheck.include` patterns.
 
 ## How to Write Type Tests
 
@@ -28,16 +27,15 @@ Use this guide to write static type tests for our library. These tests are not e
 
 ## Running Type Tests
 
-- Use the project script which enables `--typecheck`:
-  - `pnpm test`
+- `pnpm test`
 
 ## Library‑specific conventions (createForm/defineField)
 
-- Import types as needed from our library to ensure strictness:
+- Import types as needed from our form library to ensure strictness:
 
   ```ts
-  import { createForm } from "@lib/create-form-hook";
-  import type { Event } from "@lib/create-form-hook";
+  import { createForm } from "@form/create-form-hook";
+  import type { Event } from "@form/create-form-hook";
   import type { StandardSchemaV1 } from "@standard-schema/spec";
   ```
 

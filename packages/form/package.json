@@ -5,13 +5,13 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist-lib/create-form-hook.d.ts",
-      "import": "./dist-lib/create-form-hook.js",
-      "default": "./dist-lib/create-form-hook.js"
+      "types": "./dist/create-form-hook.d.ts",
+      "import": "./dist/create-form-hook.js",
+      "default": "./dist/create-form-hook.js"
     }
   },
-  "module": "./dist-lib/create-form-hook.js",
-  "types": "./dist-lib/create-form-hook.d.ts",
+  "module": "./dist/create-form-hook.js",
+  "types": "./dist/create-form-hook.d.ts",
   "scripts": {
     "build": "tsdown",
     "build:minify": "MINIFY=true tsdown",

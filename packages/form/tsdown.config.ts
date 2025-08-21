@@ -20,7 +20,7 @@ export default defineConfig(({ watch }) => {
 
   return {
     entry: [...entriesSet],
-    outDir: "dist-lib",
+    outDir: "dist",
     clean: !watch,
     watch,
     target: "chrome138",
