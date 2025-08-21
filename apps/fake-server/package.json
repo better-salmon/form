@@ -6,6 +6,7 @@
   "scripts": {
     "check-types": "tsc",
     "dev": "node --watch fake-server.ts",
+    "lint": "eslint --max-warnings 0 .",
     "start": "node fake-server.ts"
   },
   "devDependencies": {
