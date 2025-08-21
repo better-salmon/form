@@ -11,13 +11,6 @@ const DEMOS = [
     demonstrateIsolation: false,
   },
   {
-    id: "singleton-form-demo",
-    name: "Singleton Form Demo",
-    component: lazy(() => import("@/demos/singleton-form-demo")),
-    description: "Simple form with name and email fields",
-    demonstrateIsolation: true,
-  },
-  {
     id: "sync-respond-demo",
     name: "Sync Respond Demo",
     component: lazy(() => import("@/demos/sync-respond-demo")),
@@ -29,6 +22,13 @@ const DEMOS = [
     name: "Async → Sync Toggle",
     component: lazy(() => import("@/demos/async-sync-toggle-demo")),
     description: "Toggle a field from async (debounced) to sync while pending",
+    demonstrateIsolation: false,
+  },
+  {
+    id: "graph-cycles-demo",
+    name: "Graph Cycles",
+    component: lazy(() => import("@/demos/graph-cycles-demo")),
+    description: "Cyclic graphs: A↔B and A→B→C→A with visited-edge cutoff",
     demonstrateIsolation: false,
   },
 ] as const;
@@ -182,7 +182,6 @@ function App() {
                   }
                 >
                   <ActiveComponent />
-                  {activeDemoInfo?.demonstrateIsolation && <ActiveComponent />}
                 </Suspense>
               )}
             </div>

@@ -1,5 +1,15 @@
-import { createContext, use, useCallback, useMemo, useState } from "react";
-import { signal, useSignal, type Signal } from "@lib/signals/signals";
+/* eslint-disable sonarjs/cognitive-complexity */
+
+import {
+  createContext,
+  use,
+  useCallback,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  useRef,
+} from "react";
+import { shallow } from "@lib/shallow";
 import { deepEqual } from "@lib/deep-equal";
 import { normalizeDebounceMs, normalizeNumber } from "@lib/normalize-number";
 import {
@@ -18,12 +28,13 @@ type Prettify<T> = {
   // eslint-disable-next-line sonarjs/no-useless-intersection -- this is a common pattern for prettifying types
 } & {};
 
-export type FieldEvent = "change" | "blur" | "submit" | "mount";
+export type FieldEvent = "change" | "blur" | "submit" | "mount" | "props";
 const EVENTS = [
   "change",
   "blur",
   "submit",
   "mount",
+  "props",
 ] as const satisfies FieldEvent[];
 const DEFAULT_WATCHER_MAX_STEPS = 1000;
 const DEFAULT_DEBOUNCE_MS = 500;
@@ -158,13 +169,10 @@ type ValidationHelper<D = unknown> = {
 // =====================================
 
 type FieldEntry<V, D = unknown> = {
-  value: Signal<V>;
-  meta: {
-    isTouched: Signal<boolean>;
-    changeCount: Signal<number>;
-    submitCount: Signal<number>;
-  };
-  validation: Signal<ValidationStatus<D>>;
+  value: V;
+  meta: FieldMeta;
+  validation: ValidationStatus<D>;
+  snapshot: FieldSnapshot<V, D>;
 };
 
 type FieldMap<T extends DefaultValues, D = unknown> = Map<
@@ -180,7 +188,7 @@ type RunningValidation<T> = {
   stateSnapshot: T;
   timeoutId?: ReturnType<typeof setTimeout>;
   abortController?: AbortController;
-  validationId: number;
+  validationId?: number;
 };
 
 type InternalFieldOptions<T extends DefaultValues, K extends keyof T, D> = {
@@ -189,9 +197,11 @@ type InternalFieldOptions<T extends DefaultValues, K extends keyof T, D> = {
   debounceMs?: number;
   respond?: (
     context: RespondContext<T, K, D> | RespondContextSync<T, K, D>,
+    props?: unknown,
   ) => FinalValidationStatus<D> | ValidationSchedule | void;
   respondAsync?: (
     context: RespondAsyncContext<T, K, D>,
+    props?: unknown,
   ) => Promise<FinalValidationStatus<D>>;
   watch: {
     self: Set<FieldEvent>;
@@ -215,10 +225,15 @@ type FormApi<T extends DefaultValues, D = unknown> = {
 type FormStore<T extends DefaultValues, D = unknown> = {
   formApi: FormApi<T, D>;
   getFieldEntry: <K extends keyof T>(fieldName: K) => FieldEntry<T[K], D>;
+  // Reactivity
+  subscribe: (listener: () => void) => () => void;
+  getVersion: () => number;
+  getDepVersion: (depKey: DepKey) => number;
+  select: SelectHelpers<T, D>;
   mount: (fieldName: keyof T) => void;
-  registerOptions: <K extends keyof T>(
+  registerOptions: <K extends keyof T, P = unknown>(
     fieldName: K,
-    options: FieldOptions<T, K, D>,
+    options: FieldOptions<T, K, D, P>,
   ) => void;
   unregisterOptions: (fieldName: keyof T) => void;
   unmount: (fieldName: keyof T) => void;
@@ -230,6 +245,11 @@ type FormStore<T extends DefaultValues, D = unknown> = {
       incrementChanges?: boolean;
       dispatch?: boolean;
     },
+  ) => void;
+  setFieldProps: <P>(
+    fieldName: keyof T,
+    props: P | undefined,
+    equality?: (a: P | undefined, b: P | undefined) => boolean,
   ) => void;
   blur: (fieldName: keyof T) => void;
   submit: (fields?: readonly (keyof T)[]) => void;
@@ -262,35 +282,72 @@ type UseFormOptions<T extends DefaultValues> = {
 
 type CreateFormResult<T extends DefaultValues, D = unknown> = {
   useForm: (options: UseFormOptions<T>) => UseFormReturn<T, D>;
-  useField: <K extends keyof T>(
-    options: FieldOptions<T, K, D>,
+  useFormSelector: <S, P = unknown>(
+    selector: (s: SelectHelpers<T, D>, props?: P) => S,
+    options?: {
+      selectorEquality?: (a: S, b: S) => boolean;
+      propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
+      props?: P;
+    },
+  ) => S;
+  useField: <K extends keyof T, P = unknown>(
+    options: FieldOptions<T, K, D, P>,
+    propsOptions?: {
+      props?: P;
+      propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
+    },
   ) => Prettify<UseFieldReturn<T, K, D>>;
-  defineField: <K extends keyof T>(
-    options: FieldOptions<T, K, D>,
-  ) => FieldOptions<T, K, D>;
-};
-
-type CreateSingletonFormResult<T extends DefaultValues, D = unknown> = {
-  useField: <K extends keyof T>(
-    options: FieldOptions<T, K, D>,
-  ) => Prettify<UseFieldReturn<T, K, D>>;
-  defineField: <K extends keyof T>(
-    options: FieldOptions<T, K, D>,
-  ) => FieldOptions<T, K, D>;
-  formApi: FormApi<T, D>;
+  defineField: <K extends keyof T, P = unknown>(
+    options: FieldOptions<T, K, D, P>,
+  ) => FieldOptions<T, K, D, P>;
+  defineSelector: <S, P = unknown>(
+    selector: (s: SelectHelpers<T, D>, props?: P) => S,
+  ) => (s: SelectHelpers<T, D>, props?: P) => S;
 };
 
 // =====================================
 // Graph Utilities
 // =====================================
 
-function makeEdgeKey(
+// Helpers to track visited edges without string concatenation
+function hasVisitedEdge(
+  visited: Map<PropertyKey, Map<PropertyKey, Set<FieldEvent>>>,
   watched: PropertyKey,
   target: PropertyKey,
   action: FieldEvent,
-): string {
-  return `${String(watched)}->${String(target)}@${action}`;
+): boolean {
+  const byWatched = visited.get(watched);
+  if (!byWatched) {
+    return false;
+  }
+  const byTarget = byWatched.get(target);
+  if (!byTarget) {
+    return false;
+  }
+  return byTarget.has(action);
 }
+
+function markVisitedEdge(
+  visited: Map<PropertyKey, Map<PropertyKey, Set<FieldEvent>>>,
+  watched: PropertyKey,
+  target: PropertyKey,
+  action: FieldEvent,
+): void {
+  const byWatched =
+    visited.get(watched) ?? new Map<PropertyKey, Set<FieldEvent>>();
+  const byTarget = byWatched.get(target) ?? new Set<FieldEvent>();
+  byTarget.add(action);
+  byWatched.set(target, byTarget);
+  visited.set(watched, byWatched);
+}
+
+// =====================================
+// Dependency Keys (per-slice tracking)
+// =====================================
+
+type SliceId = "value" | "meta" | "validation" | "mounted" | "snapshot";
+
+type DepKey = { slice: SliceId; field: PropertyKey };
 
 function makeCauseForTarget<T extends DefaultValues, K extends keyof T>(
   target: K,
@@ -353,7 +410,7 @@ export type RespondContext<
   };
 };
 
-// Sync variant: identical to RespondContext but without async helpers on validation
+// Sync-only variant of RespondContext without the schedule helper (no async flow control)
 export type RespondContextSync<
   T extends DefaultValues,
   K extends keyof T,
@@ -397,6 +454,7 @@ type SyncOnlyFieldOptionsExtension<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
+  P = unknown,
 > = {
   standardSchema?: StandardSchemaV1<T[K]>;
   watch?: {
@@ -407,6 +465,7 @@ type SyncOnlyFieldOptionsExtension<
   };
   respond: (
     context: Prettify<RespondContextSync<T, K, D>>,
+    props?: P,
   ) => FinalValidationStatus<D> | void;
   respondAsync?: never;
   debounceMs?: never;
@@ -416,6 +475,7 @@ type AsyncOnlyFieldOptionsExtension<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
+  P = unknown,
 > = {
   standardSchema?: StandardSchemaV1<T[K]>;
   watch?: {
@@ -427,6 +487,7 @@ type AsyncOnlyFieldOptionsExtension<
   respond?: never;
   respondAsync: (
     context: Prettify<RespondAsyncContext<T, K, D>>,
+    props?: P,
   ) => Promise<FinalValidationStatus<D>>;
   debounceMs?: number;
 };
@@ -435,6 +496,7 @@ type SyncAsyncFieldOptionsExtension<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
+  P = unknown,
 > = {
   standardSchema?: StandardSchemaV1<T[K]>;
   watch?: {
@@ -445,9 +507,11 @@ type SyncAsyncFieldOptionsExtension<
   };
   respond: (
     context: Prettify<RespondContext<T, K, D>>,
+    props?: P,
   ) => FinalValidationStatus<D> | ValidationSchedule | void;
   respondAsync: (
     context: Prettify<RespondAsyncContext<T, K, D>>,
+    props?: P,
   ) => Promise<FinalValidationStatus<D>>;
   debounceMs?: number;
 };
@@ -464,13 +528,14 @@ export type FieldOptions<
   T extends DefaultValues,
   K extends keyof T,
   D = unknown,
+  P = unknown,
 > = Prettify<
   {
     name: K;
   } & (
-    | SyncOnlyFieldOptionsExtension<T, K, D>
-    | AsyncOnlyFieldOptionsExtension<T, K, D>
-    | SyncAsyncFieldOptionsExtension<T, K, D>
+    | SyncOnlyFieldOptionsExtension<T, K, D, P>
+    | AsyncOnlyFieldOptionsExtension<T, K, D, P>
+    | SyncAsyncFieldOptionsExtension<T, K, D, P>
     | NoValidationFieldOptionsExtension
   )
 >;
@@ -517,9 +582,14 @@ function run(debounceMs?: number): ValidationFlowForce {
   } as ValidationFlowForce;
 }
 
-function normalizeFieldOptions<T extends DefaultValues, K extends keyof T, D>(
+function normalizeFieldOptions<
+  T extends DefaultValues,
+  K extends keyof T,
+  D,
+  P,
+>(
   fieldName: K,
-  options: FieldOptions<T, K, D>,
+  options: FieldOptions<T, K, D, P>,
 ): InternalFieldOptions<T, K, D> {
   const triggersSelf = new Set<FieldEvent>(options.watch?.self ?? EVENTS);
   const from = new Map<Exclude<keyof T, K>, Set<FieldEvent>>();
@@ -529,9 +599,7 @@ function normalizeFieldOptions<T extends DefaultValues, K extends keyof T, D>(
       K
     >[]) {
       const val = options.watch.fields[key];
-      const actions = new Set<FieldEvent>(
-        typeof val === "boolean" ? EVENTS : (val ?? []),
-      );
+      const actions = new Set<FieldEvent>(val === true ? EVENTS : (val ?? []));
       from.set(key, actions);
     }
   }
@@ -541,9 +609,11 @@ function normalizeFieldOptions<T extends DefaultValues, K extends keyof T, D>(
     debounceMs: options.debounceMs,
     respond: options.respond as (
       context: RespondContext<T, K, D> | RespondContextSync<T, K, D>,
+      props?: unknown,
     ) => FinalValidationStatus<D> | ValidationSchedule | void,
     respondAsync: options.respondAsync as (
       context: RespondAsyncContext<T, K, D>,
+      props?: unknown,
     ) => Promise<FinalValidationStatus<D>>,
     watch: { self: triggersSelf, from },
   } satisfies InternalFieldOptions<T, K, D>;
@@ -662,14 +732,23 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   ][];
 
   for (const [fieldName, value] of defaultValuesEntries) {
+    const meta: FieldMeta = {
+      isTouched: false,
+      changeCount: 0,
+      submitCount: 0,
+    };
+    const validation = validationHelper.idle() as ValidationStatus<D>;
+    const snapshot: FieldSnapshot<T[typeof fieldName], D> = {
+      value,
+      meta,
+      validation,
+      isMounted: false,
+    };
     fieldsMap.set(fieldName, {
-      value: signal<T[keyof T]>(value),
-      meta: {
-        isTouched: signal(false),
-        changeCount: signal(0),
-        submitCount: signal(0),
-      },
-      validation: signal<ValidationStatus<D>>(validationHelper.idle()),
+      value,
+      meta,
+      validation,
+      snapshot,
     });
   }
 
@@ -685,18 +764,91 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       | undefined;
   }
 
-  const reactions = new Map<string, Set<keyof T>>();
-  const targetToWatchKeys = new Map<keyof T, Set<string>>();
+  const reactions = new Map<keyof T, Map<FieldEvent, Set<keyof T>>>();
+  const targetReactionKeys = new Map<keyof T, Map<keyof T, Set<FieldEvent>>>();
   const runningValidations = new Map<keyof T, RunningValidation<T[keyof T]>>();
   const lastValidatedValue = new Map<keyof T, T[keyof T]>();
   const lastValidatedChanges = new Map<keyof T, number>();
   const validationIds = new Map<keyof T, number>();
+  const fieldPropsMap = new Map<keyof T, unknown>();
+  const fieldMountCounts = new Map<keyof T, number>();
+  const depVersionsBySlice = new Map<SliceId, Map<keyof T, number>>();
+
+  function bumpDepVersion(slice: SliceId, fieldName: keyof T) {
+    const bySlice = depVersionsBySlice.get(slice) ?? new Map<keyof T, number>();
+    const next = (bySlice.get(fieldName) ?? 0) + 1;
+    bySlice.set(fieldName, next);
+    depVersionsBySlice.set(slice, bySlice);
+  }
+
+  function readDepVersion(depKey: DepKey): number {
+    const bySlice = depVersionsBySlice.get(depKey.slice);
+    if (!bySlice) {
+      return 0;
+    }
+    return bySlice.get(depKey.field as keyof T) ?? 0;
+  }
+
+  function clearDepVersionsForField(fieldName: keyof T) {
+    depVersionsBySlice.get("value")?.delete(fieldName);
+    depVersionsBySlice.get("meta")?.delete(fieldName);
+    depVersionsBySlice.get("validation")?.delete(fieldName);
+    depVersionsBySlice.get("mounted")?.delete(fieldName);
+    depVersionsBySlice.get("snapshot")?.delete(fieldName);
+  }
+
+  // -- Snapshot and dependency helpers (deduplicated)
+  function buildSnapshotFor<K extends keyof T>(
+    fieldName: K,
+    entry: FieldEntry<T[K], D>,
+  ): FieldSnapshot<T[K], D> {
+    return {
+      value: entry.value,
+      meta: entry.meta,
+      validation: entry.validation,
+      isMounted: mountedFields.has(fieldName),
+    } as FieldSnapshot<T[K], D>;
+  }
+
+  function updateSnapshotAndDeps(
+    fieldName: keyof T,
+    changedSlices: Iterable<SliceId>,
+  ): void {
+    const entry = getFieldEntry(fieldName);
+    entry.snapshot = buildSnapshotFor(fieldName, entry);
+    const seen = new Set<SliceId>();
+    for (const slice of changedSlices) {
+      if (slice !== "snapshot" && !seen.has(slice)) {
+        bumpDepVersion(slice, fieldName);
+        seen.add(slice);
+      }
+    }
+    bumpDepVersion("snapshot", fieldName);
+    markDirty();
+  }
 
   const maxDispatchSteps = normalizeNumber(options.maxDispatchSteps, {
     fallback: DEFAULT_WATCHER_MAX_STEPS,
     min: 1,
     integer: "floor",
   });
+
+  // -- Global subscription and batching
+  const listeners = new Set<() => void>();
+  let version = 0;
+  let dirty = false;
+
+  function markDirty() {
+    dirty = true;
+  }
+
+  function notify() {
+    version += 1;
+    const copy = [...listeners];
+    for (const l of copy) {
+      l();
+    }
+  }
 
   function getRunningValidation<K extends keyof T>(
     fieldName: K,
@@ -716,7 +868,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   const watcherTransaction = {
     active: false,
     depth: 0,
-    visited: new Set<string>(),
+    visited: new Map<PropertyKey, Map<PropertyKey, Set<FieldEvent>>>(),
     steps: 0,
     maxSteps: maxDispatchSteps,
     bailOut: false,
@@ -728,7 +880,8 @@ function createFormStore<T extends DefaultValues, D = unknown>(
 
     invariant(entry, `Unknown field: ${String(fieldName)}`);
 
-    return entry as unknown as FieldEntry<T[K], D>;
+    // The map is keyed by K so this cast is safe
+    return entry as FieldEntry<T[K], D>;
   }
 
   // -- Dispatch transaction wrapper
@@ -750,6 +903,10 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         watcherTransaction.visited.clear();
         watcherTransaction.steps = 0;
         watcherTransaction.bailOut = false;
+        if (dirty) {
+          dirty = false;
+          notify();
+        }
       }
     }
   }
@@ -784,7 +941,11 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   function setFieldState(fieldName: keyof T, state: ValidationStatus<D>) {
-    getFieldEntry(fieldName).validation.setValue(state, deepEqual);
+    const entry = getFieldEntry(fieldName);
+    if (!deepEqual(entry.validation, state)) {
+      entry.validation = state;
+      updateSnapshotAndDeps(fieldName, ["validation"]);
+    }
   }
 
   function setLastValidatedValue<K extends keyof T>(fieldName: K, value: T[K]) {
@@ -811,7 +972,6 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       runValidation(fieldName, value, action, cause);
       return;
     }
-    const validationId = incrementValidationId(fieldName);
     setFieldState(fieldName, internalValidationHelper.pending());
     const timeoutId = setTimeout(() => {
       clearValidationTimeout(fieldName);
@@ -820,7 +980,6 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     setRunningValidation(fieldName, {
       stateSnapshot: value,
       timeoutId,
-      validationId,
     });
   }
 
@@ -842,37 +1001,45 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     const abortController = new AbortController();
     const { signal } = abortController;
 
-    setRunningValidation(fieldName, {
-      stateSnapshot: value,
-      abortController,
-      validationId,
+    // Ensure the transition to "validating" notifies subscribers even when
+    // invoked from a debounce timeout (i.e. outside any existing transaction).
+    runInDispatchTransaction(() => {
+      setRunningValidation(fieldName, {
+        stateSnapshot: value,
+        abortController,
+        validationId,
+      });
+      setFieldState(fieldName, internalValidationHelper.validating());
+      setLastValidatedValue(fieldName, value);
+      lastValidatedChanges.set(
+        fieldName,
+        getFieldEntry(fieldName).meta.changeCount,
+      );
     });
-    setFieldState(fieldName, internalValidationHelper.validating());
-    setLastValidatedValue(fieldName, value);
-    lastValidatedChanges.set(
-      fieldName,
-      getFieldEntry(fieldName).meta.changeCount.getValue(),
-    );
 
     const currentFieldView = getSnapshot(fieldName);
     const standardSchema = options.standardSchema;
 
+    const props = fieldPropsMap.get(fieldName);
     options
-      .respondAsync({
-        action,
-        cause,
-        value,
-        current: currentFieldView,
-        signal,
-        helpers: {
-          validation: validationHelper,
-          validateWithSchemaAsync: async () =>
-            standardSchema
-              ? await standardValidateAsync(standardSchema, value)
-              : undefined,
+      .respondAsync(
+        {
+          action,
+          cause,
+          value,
+          current: currentFieldView,
+          signal,
+          helpers: {
+            validation: validationHelper,
+            validateWithSchemaAsync: async () =>
+              standardSchema
+                ? await standardValidateAsync(standardSchema, value)
+                : undefined,
+          },
+          form,
         },
-        form,
-      })
+        props,
+      )
       .then((result) => {
         if (abortController.signal.aborted) {
           return;
@@ -880,8 +1047,10 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         if (validationId !== validationIds.get(fieldName)) {
           return;
         }
-        setFieldState(fieldName, result);
-        cleanupValidation(fieldName);
+        runInDispatchTransaction(() => {
+          setFieldState(fieldName, result);
+          cleanupValidation(fieldName);
+        });
       })
       .catch((error: unknown) => {
         if (abortController.signal.aborted) {
@@ -890,18 +1059,22 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         if (validationId !== validationIds.get(fieldName)) {
           return;
         }
-        setFieldState(
-          fieldName,
-          validationHelper.invalid({
-            issues: [
-              {
-                message:
-                  error instanceof Error ? error.message : "Validation failed",
-              },
-            ],
-          }),
-        );
-        cleanupValidation(fieldName);
+        runInDispatchTransaction(() => {
+          setFieldState(
+            fieldName,
+            validationHelper.invalid({
+              issues: [
+                {
+                  message:
+                    error instanceof Error
+                      ? error.message
+                      : "Validation failed",
+                },
+              ],
+            }),
+          );
+          cleanupValidation(fieldName);
+        });
       });
   }
 
@@ -925,15 +1098,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         if (
           shouldSkipAutoValidation(
             getRunningValidation(fieldName),
-            getFieldEntry(fieldName).value.getValue(),
+            getFieldEntry(fieldName).value,
             getLastValidatedValue(fieldName),
             lastValidatedChanges.get(fieldName) ?? 0,
-            getFieldEntry(fieldName).meta.changeCount.getValue(),
+            getFieldEntry(fieldName).meta.changeCount,
           )
         ) {
           return;
         }
-        const value = getFieldEntry(fieldName).value.getValue();
+        const value = getFieldEntry(fieldName).value;
         const debounceMs = normalizeDebounceMs(
           flow.debounceMs ?? options.debounceMs ?? defaultDebounceMs,
         );
@@ -941,7 +1114,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         return;
       }
       case "run": {
-        const value = getFieldEntry(fieldName).value.getValue();
+        const value = getFieldEntry(fieldName).value;
         const debounceMs = normalizeDebounceMs(
           flow.debounceMs ?? options.debounceMs ?? defaultDebounceMs,
         );
@@ -976,11 +1149,12 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       return;
     }
 
-    const value = getFieldEntry(target).value.getValue();
+    const value = getFieldEntry(target).value;
     const currentView = getSnapshot(target);
     const standardSchema = options.standardSchema;
 
     let result: FinalValidationStatus<D> | ValidationSchedule | void;
+    const props = fieldPropsMap.get(target);
     if (options.respondAsync) {
       const context: RespondContext<T, K, D> = {
         action,
@@ -999,7 +1173,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
               : undefined,
         },
       };
-      result = options.respond?.(context);
+      result = options.respond?.(context, props);
     } else {
       const ctxSync: RespondContextSync<T, K, D> = {
         action,
@@ -1017,7 +1191,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
               : undefined,
         },
       };
-      result = options.respond?.(ctxSync);
+      result = options.respond?.(ctxSync, props);
     }
 
     let outcome: FinalValidationStatus<D> | ValidationSchedule =
@@ -1037,8 +1211,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   // -- Reaction graph and dispatch
   function dispatch(watched: keyof T, action: FieldEvent) {
     runInDispatchTransaction(() => {
-      const key = `${String(watched)}:${action}`;
-      const targets = reactions.get(key);
+      const targets = reactions.get(watched)?.get(action);
       if (!targets) {
         return;
       }
@@ -1046,9 +1219,10 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         if (watcherTransaction.bailOut) {
           break;
         }
-        const edge = makeEdgeKey(watched, target, action);
         const isSelfEdge = target === watched;
-        if (watcherTransaction.visited.has(edge)) {
+        if (
+          hasVisitedEdge(watcherTransaction.visited, watched, target, action)
+        ) {
           continue;
         }
         // Do not let self-edges (watched === target) consume steps. They are
@@ -1060,19 +1234,21 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         ) {
           watcherTransaction.bailOut = true;
 
-          console.warn(
-            "Dispatch chain exceeded max steps; breaking to avoid a loop",
-            {
-              maxSteps: watcherTransaction.maxSteps,
-              steps: watcherTransaction.steps,
-              watched: String(watched),
-              target: String(target),
-              action,
-            },
-          );
+          if (process.env.NODE_ENV !== "production") {
+            console.warn(
+              "Dispatch chain exceeded max steps; breaking to avoid a loop",
+              {
+                maxSteps: watcherTransaction.maxSteps,
+                steps: watcherTransaction.steps,
+                watched: String(watched),
+                target: String(target),
+                action,
+              },
+            );
+          }
           break;
         }
-        watcherTransaction.visited.add(edge);
+        markVisitedEdge(watcherTransaction.visited, watched, target, action);
         if (!isSelfEdge) {
           watcherTransaction.steps += 1;
         }
@@ -1081,38 +1257,53 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     });
   }
 
-  function clearPreviousReactionsFor(target: keyof T): Set<string> {
-    const previousKeys = targetToWatchKeys.get(target);
-    if (!previousKeys) {
-      return new Set<string>();
+  function clearPreviousReactionsFor(
+    target: keyof T,
+  ): Map<keyof T, Set<FieldEvent>> {
+    const previous = targetReactionKeys.get(target);
+    if (!previous) {
+      return new Map<keyof T, Set<FieldEvent>>();
     }
-    for (const key of previousKeys) {
-      const setForKey = reactions.get(key);
-      if (!setForKey) {
+    for (const [watched, actions] of previous.entries()) {
+      const actionMap = reactions.get(watched);
+      if (!actionMap) {
         continue;
       }
-      setForKey.delete(target);
-      if (setForKey.size === 0) {
-        reactions.delete(key);
+      for (const action of actions) {
+        const setForAction = actionMap.get(action);
+        if (!setForAction) {
+          continue;
+        }
+        setForAction.delete(target);
+        if (setForAction.size === 0) {
+          actionMap.delete(action);
+        }
+      }
+      if (actionMap.size === 0) {
+        reactions.delete(watched);
       }
     }
-    previousKeys.clear();
-    return previousKeys;
+    previous.clear();
+    return previous;
   }
 
   function addReactions(
     watched: keyof T,
     actions: Set<FieldEvent>,
     target: keyof T,
-    keysForTarget: Set<string>,
+    keysForTarget: Map<keyof T, Set<FieldEvent>>,
   ) {
+    const actionMap =
+      reactions.get(watched) ?? new Map<FieldEvent, Set<keyof T>>();
     for (const action of actions) {
-      const key = `${String(watched)}:${action}`;
-      const setForKey = reactions.get(key) ?? new Set<keyof T>();
-      setForKey.add(target);
-      reactions.set(key, setForKey);
-      keysForTarget.add(key);
+      const setForAction = actionMap.get(action) ?? new Set<keyof T>();
+      setForAction.add(target);
+      actionMap.set(action, setForAction);
+      const perWatched = keysForTarget.get(watched) ?? new Set<FieldEvent>();
+      perWatched.add(action);
+      keysForTarget.set(watched, perWatched);
     }
+    reactions.set(watched, actionMap);
   }
 
   function registerReactionsFor<K extends keyof T>(
@@ -1129,7 +1320,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       addReactions(watched, actions, fieldName, keysForTarget);
     }
 
-    targetToWatchKeys.set(fieldName, keysForTarget);
+    targetReactionKeys.set(fieldName, keysForTarget);
   }
 
   function setValue<K extends keyof T>(
@@ -1141,54 +1332,74 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       dispatch?: boolean;
     },
   ) {
-    const markTouched = options?.markTouched ?? true;
-    const incrementChanges = options?.incrementChanges ?? true;
-    const shouldDispatch = options?.dispatch ?? true;
+    runInDispatchTransaction(() => {
+      const markTouched = options?.markTouched ?? true;
+      const incrementChanges = options?.incrementChanges ?? true;
+      const shouldDispatch = options?.dispatch ?? true;
 
-    const entry = getFieldEntry(fieldName);
-    const previousValue = entry.value.getValue();
-    const hasChanged = !deepEqual(previousValue, value);
-    if (hasChanged) {
-      entry.value.setValue(value, deepEqual);
-    }
+      const entry = getFieldEntry(fieldName);
+      const previousValue = entry.value;
+      const hasChanged = !deepEqual(previousValue, value);
+      const changedSlices = new Set<SliceId>();
+      if (hasChanged) {
+        entry.value = value;
+        changedSlices.add("value");
+      }
 
-    if (markTouched) {
-      entry.meta.isTouched.setValue(true);
-    }
+      if (markTouched && !entry.meta.isTouched) {
+        entry.meta = { ...entry.meta, isTouched: true };
+        changedSlices.add("meta");
+      }
 
-    if (incrementChanges && hasChanged) {
-      entry.meta.changeCount.setValue(entry.meta.changeCount.getValue() + 1);
-    }
+      if (incrementChanges && hasChanged) {
+        entry.meta = {
+          ...entry.meta,
+          changeCount: entry.meta.changeCount + 1,
+        };
+        changedSlices.add("meta");
+      }
 
-    if (shouldDispatch && hasChanged) {
-      dispatch(fieldName, "change");
-    }
+      if (changedSlices.size > 0) {
+        updateSnapshotAndDeps(fieldName, changedSlices);
+      }
+
+      if (shouldDispatch && hasChanged) {
+        dispatch(fieldName, "change");
+      }
+    });
   }
   function reset(
     fieldName: keyof T,
     options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
   ) {
-    // Reset value to default without touching meta/counters by default
-    setValue(fieldName, defaultValues[fieldName], {
-      markTouched: false,
-      incrementChanges: false,
-      dispatch: options?.dispatch,
+    runInDispatchTransaction(() => {
+      // Reset value to default without touching meta/counters by default
+      setValue(fieldName, defaultValues[fieldName], {
+        markTouched: false,
+        incrementChanges: false,
+        dispatch: options?.dispatch,
+      });
+
+      if (options?.meta) {
+        const entry = getFieldEntry(fieldName);
+        entry.meta = { isTouched: false, changeCount: 0, submitCount: 0 };
+        updateSnapshotAndDeps(fieldName, ["meta"]);
+      }
+
+      if (options?.validation) {
+        setFieldState(fieldName, validationHelper.idle());
+        cleanupValidation(fieldName);
+      }
     });
-
-    if (options?.meta) {
-      const entry = getFieldEntry(fieldName);
-      entry.meta.isTouched.setValue(false);
-      entry.meta.changeCount.setValue(0);
-      entry.meta.submitCount.setValue(0);
-    }
-
-    if (options?.validation) {
-      setFieldState(fieldName, validationHelper.idle());
-      cleanupValidation(fieldName);
-    }
   }
   function touch(fieldName: keyof T) {
-    getFieldEntry(fieldName).meta.isTouched.setValue(true);
+    runInDispatchTransaction(() => {
+      const entry = getFieldEntry(fieldName);
+      if (!entry.meta.isTouched) {
+        entry.meta = { ...entry.meta, isTouched: true };
+        updateSnapshotAndDeps(fieldName, ["meta"]);
+      }
+    });
   }
   function submit(fieldNames?: readonly (keyof T)[]) {
     const toSubmit = new Set(
@@ -1200,7 +1411,8 @@ function createFormStore<T extends DefaultValues, D = unknown>(
           continue;
         }
         const entry = getFieldEntry(fieldName);
-        entry.meta.submitCount.setValue(entry.meta.submitCount.getValue() + 1);
+        entry.meta = { ...entry.meta, submitCount: entry.meta.submitCount + 1 };
+        updateSnapshotAndDeps(fieldName, ["meta"]);
         dispatch(fieldName, "submit");
         if (watcherTransaction.bailOut) {
           break;
@@ -1213,8 +1425,14 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   function unregisterFieldOptions(fieldName: keyof T) {
     cleanupValidation(fieldName);
     clearPreviousReactionsFor(fieldName);
-    targetToWatchKeys.delete(fieldName);
+    targetReactionKeys.delete(fieldName);
     fieldOptions.delete(fieldName);
+    // Cleanup auxiliary maps for dynamic fields
+    fieldPropsMap.delete(fieldName);
+    lastValidatedValue.delete(fieldName);
+    lastValidatedChanges.delete(fieldName);
+    validationIds.delete(fieldName);
+    clearDepVersionsForField(fieldName);
   }
 
   function settleIfAsyncDisabled<K extends keyof T>(
@@ -1224,7 +1442,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     if (internal.respondAsync) {
       return;
     }
-    const currentState = getFieldEntry(fieldName).validation.getValue();
+    const currentState = getFieldEntry(fieldName).validation;
     if (currentState.type !== "pending" && currentState.type !== "validating") {
       return;
     }
@@ -1237,41 +1455,66 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   // -- Options registration lifecycle
-  function setFieldOptions<K extends keyof T>(
+  function setFieldOptions<K extends keyof T, P = unknown>(
     fieldName: K,
-    options: FieldOptions<T, K, D> | undefined,
+    options: FieldOptions<T, K, D, P> | undefined,
   ) {
-    if (!options) {
-      unregisterFieldOptions(fieldName);
-      return;
-    }
-    const internal = normalizeFieldOptions(fieldName, options);
-    fieldOptions.set(fieldName, internal);
-    registerReactionsFor(fieldName, internal);
-    settleIfAsyncDisabled(fieldName, internal);
+    // Wrap in a dispatch transaction so any state changes (e.g. settling
+    // pending/validating when switching off async) notify subscribers.
+    runInDispatchTransaction(() => {
+      if (!options) {
+        unregisterFieldOptions(fieldName);
+        return;
+      }
+      const internal = normalizeFieldOptions<T, K, D, P>(fieldName, options);
+      fieldOptions.set(fieldName, internal);
+      registerReactionsFor(fieldName, internal);
+      settleIfAsyncDisabled(fieldName, internal);
+    });
   }
 
   function mount(fieldName: keyof T) {
-    if (!mountedFields.has(fieldName)) {
-      mountedFields.add(fieldName);
-      dispatch(fieldName, "mount");
-    }
+    runInDispatchTransaction(() => {
+      const nextCount = (fieldMountCounts.get(fieldName) ?? 0) + 1;
+      fieldMountCounts.set(fieldName, nextCount);
+      if (!mountedFields.has(fieldName)) {
+        mountedFields.add(fieldName);
+        updateSnapshotAndDeps(fieldName, ["mounted"]);
+        dispatch(fieldName, "mount");
+      } else if (process.env.NODE_ENV !== "production" && nextCount > 1) {
+        console.warn(
+          `useField: multiple mounts detected for field "${String(
+            fieldName,
+          )}" within the same store. This can cause unexpected behavior.`,
+        );
+      }
+    });
   }
 
   function unmount(fieldName: keyof T) {
-    if (mountedFields.has(fieldName)) {
-      mountedFields.delete(fieldName);
-    }
-    cleanupValidation(fieldName);
+    runInDispatchTransaction(() => {
+      const current = fieldMountCounts.get(fieldName) ?? 0;
+      const next = Math.max(0, current - 1);
+      if (next === 0) {
+        fieldMountCounts.delete(fieldName);
+        if (mountedFields.has(fieldName)) {
+          mountedFields.delete(fieldName);
+          updateSnapshotAndDeps(fieldName, ["mounted"]);
+        }
+      } else {
+        fieldMountCounts.set(fieldName, next);
+      }
+      cleanupValidation(fieldName);
+    });
   }
 
   function blur(fieldName: keyof T) {
     dispatch(fieldName, "blur");
   }
 
-  function registerOptions<K extends keyof T>(
+  function registerOptions<K extends keyof T, P = unknown>(
     fieldName: K,
-    options: FieldOptions<T, K, D>,
+    options: FieldOptions<T, K, D, P>,
   ) {
     setFieldOptions(fieldName, options);
   }
@@ -1284,22 +1527,60 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     fieldName: K,
   ): FieldSnapshot<T[K], D> {
     const field = getFieldEntry(fieldName);
-    return {
-      value: field.value.getValue(),
-      meta: {
-        isTouched: field.meta.isTouched.getValue(),
-        changeCount: field.meta.changeCount.getValue(),
-        submitCount: field.meta.submitCount.getValue(),
-      },
-      validation: field.validation.getValue(),
-      isMounted: mountedFields.has(fieldName),
-    };
+    // Return cached snapshot to preserve reference stability
+    return field.snapshot;
   }
+
+  function setFieldProps<P>(
+    fieldName: keyof T,
+    props: P | undefined,
+    equality: (a: P | undefined, b: P | undefined) => boolean = shallow,
+  ) {
+    const prev = fieldPropsMap.get(fieldName) as P | undefined;
+    if (equality(prev, props)) {
+      return;
+    }
+    fieldPropsMap.set(fieldName, props);
+    // Dispatch props event to allow respond/respondAsync to consider new props
+    dispatch(fieldName, "props");
+  }
+
+  // -- Select helpers (first-class)
+  const select: SelectHelpers<T, D> = {
+    value<K extends keyof T>(name: K): T[K] {
+      return getFieldEntry(name).value;
+    },
+    meta(name: keyof T): FieldMeta {
+      return getFieldEntry(name).meta;
+    },
+    validation(name: keyof T): ValidationStatus<D> {
+      return getFieldEntry(name).validation;
+    },
+    snapshot<K extends keyof T>(name: K): FieldSnapshot<T[K], D> {
+      return getSnapshot(name);
+    },
+    mounted(name: keyof T): boolean {
+      return mountedFields.has(name);
+    },
+  };
 
   const store: FormStore<T, D> = {
     formApi: {
       getSnapshot,
     },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    getVersion() {
+      return version;
+    },
+    getDepVersion(depKey: DepKey) {
+      return readDepVersion(depKey);
+    },
+    select,
     blur,
     registerOptions,
     unregisterOptions,
@@ -1307,6 +1588,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     mount,
     unmount,
     setValue,
+    setFieldProps,
     reset,
     submit,
   };
@@ -1318,18 +1600,182 @@ function createFormStore<T extends DefaultValues, D = unknown>(
 // Hooks helpers
 // =====================================
 
-function defineField<T extends DefaultValues, K extends keyof T, D = unknown>(
-  options: FieldOptions<T, K, D>,
-): FieldOptions<T, K, D> {
+function defineField<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+  P = undefined,
+>(options: FieldOptions<T, K, D, P>): FieldOptions<T, K, D, P> {
   return options;
+}
+
+function defineSelector<
+  T extends DefaultValues,
+  D = unknown,
+  S = unknown,
+  P = undefined,
+>(
+  selector: (s: SelectHelpers<T, D>, props?: P) => S,
+): (s: SelectHelpers<T, D>, props?: P) => S {
+  return selector;
+}
+
+// First-class select helpers typing
+export type SelectHelpers<T extends DefaultValues, D = unknown> = {
+  value: <K extends keyof T>(name: K) => T[K];
+  meta: (name: keyof T) => FieldMeta;
+  validation: (name: keyof T) => ValidationStatus<D>;
+  snapshot: <K extends keyof T>(name: K) => FieldSnapshot<T[K], D>;
+  mounted: (name: keyof T) => boolean;
+};
+
+// =====================================
+// useFormSelector (Context)
+// =====================================
+
+export function useFormSelector<
+  T extends DefaultValues,
+  D = unknown,
+  S = unknown,
+  P = unknown,
+>(
+  selector: (s: SelectHelpers<T, D>, props?: P) => S,
+  options?: {
+    selectorEquality?: (a: S, b: S) => boolean;
+    propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
+    props?: P;
+  },
+): S {
+  const store = use(StoreContext) as FormStore<T, D> | null;
+  invariant(store, "useFormSelector must be used within a FormProvider");
+
+  const {
+    selectorEquality = shallow,
+    propsEquality = shallow,
+    props,
+  } = options ?? {};
+
+  const lastSelectedRef = useRef<S | undefined>(undefined);
+  const lastPropsRef = useRef<P | undefined>(undefined);
+  const usedDepsBySliceRef = useRef<Map<SliceId, Set<keyof T>>>(new Map());
+  const lastDepVersionsRef = useRef<Map<SliceId, Map<keyof T, number>>>(
+    new Map(),
+  );
+
+  const getSelected = useCallback(() => {
+    const prev = lastSelectedRef.current;
+    const propsChanged = !propsEquality(lastPropsRef.current, props);
+    // Fast path: if props didn't change and none of the previously used
+    // dependencies changed, return previous selection to preserve referential
+    // stability and avoid re-computation.
+    if (!propsChanged && prev !== undefined) {
+      let anyChanged = false;
+      for (const [slice, fields] of usedDepsBySliceRef.current) {
+        const lastByField: Map<keyof T, number> =
+          lastDepVersionsRef.current.get(slice) ?? new Map<keyof T, number>();
+        for (const field of fields) {
+          const last = lastByField.get(field) ?? 0;
+          const curr = store.getDepVersion({ slice, field });
+          if (last !== curr) {
+            anyChanged = true;
+            break;
+          }
+        }
+        if (anyChanged) {
+          break;
+        }
+      }
+      if (!anyChanged) {
+        return prev;
+      }
+    }
+
+    // Track dependencies during selection
+    const nextUsed = new Map<SliceId, Set<keyof T>>();
+    const trackingSelect: SelectHelpers<T, D> = {
+      value: <K extends keyof T>(name: K): T[K] => {
+        const set = nextUsed.get("value") ?? new Set<keyof T>();
+        set.add(name);
+        nextUsed.set("value", set);
+        return store.select.value(name);
+      },
+      meta: (name) => {
+        const set = nextUsed.get("meta") ?? new Set<keyof T>();
+        set.add(name);
+        nextUsed.set("meta", set);
+        return store.select.meta(name);
+      },
+      validation: (name) => {
+        const set = nextUsed.get("validation") ?? new Set<keyof T>();
+        set.add(name);
+        nextUsed.set("validation", set);
+        return store.select.validation(name);
+      },
+      snapshot: <K extends keyof T>(name: K): FieldSnapshot<T[K], D> => {
+        const set = nextUsed.get("snapshot") ?? new Set<keyof T>();
+        set.add(name);
+        nextUsed.set("snapshot", set);
+        return store.select.snapshot(name);
+      },
+      mounted: (name) => {
+        const set = nextUsed.get("mounted") ?? new Set<keyof T>();
+        set.add(name);
+        nextUsed.set("mounted", set);
+        return store.select.mounted(name);
+      },
+    };
+
+    const next = selector(trackingSelect, props);
+
+    // Snapshot dependency versions for the next run
+    const newVersions = new Map<SliceId, Map<keyof T, number>>();
+    for (const [slice, fields] of nextUsed) {
+      const versionsByField = new Map<keyof T, number>();
+      for (const field of fields) {
+        versionsByField.set(field, store.getDepVersion({ slice, field }));
+      }
+      newVersions.set(slice, versionsByField);
+    }
+
+    // Determine returned reference based on equality
+    const prevSelected = lastSelectedRef.current;
+    let result = next;
+    if (prevSelected !== undefined && selectorEquality(prevSelected, next)) {
+      result = prevSelected;
+    }
+
+    usedDepsBySliceRef.current = nextUsed;
+    lastDepVersionsRef.current = newVersions;
+    lastPropsRef.current = props;
+    lastSelectedRef.current = result;
+
+    return result;
+  }, [selectorEquality, propsEquality, props, selector, store]);
+
+  const selected = useSyncExternalStore(
+    store.subscribe,
+    getSelected,
+    getSelected,
+  );
+
+  return selected;
 }
 
 // =====================================
 // Hooks
 // =====================================
 
-function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
-  options: FieldOptions<T, K, D>,
+function useField<
+  T extends DefaultValues,
+  K extends keyof T,
+  D = unknown,
+  P = unknown,
+>(
+  options: FieldOptions<T, K, D, P>,
+  propsOptions?: {
+    props?: P;
+    propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
+  },
 ): Prettify<UseFieldReturn<T, K, D>> {
   const store = use(StoreContext) as FormStore<T, D> | null;
 
@@ -1337,6 +1783,8 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
 
   const { name, debounceMs, watch, respond, respondAsync, standardSchema } =
     options;
+
+  const { props, propsEquality = shallow } = propsOptions ?? {};
 
   useIsomorphicEffect(() => {
     store.registerOptions(name, {
@@ -1346,12 +1794,16 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
       watch,
       respond,
       standardSchema,
-    } as FieldOptions<T, K, D>);
+    } as FieldOptions<T, K, D, P>);
 
     return () => {
       store.unregisterOptions(name);
     };
   }, [debounceMs, name, watch, respond, respondAsync, standardSchema, store]);
+
+  useIsomorphicEffect(() => {
+    store.setFieldProps(name, props, propsEquality);
+  }, [name, props, propsEquality, store]);
 
   useIsomorphicEffect(() => {
     store.mount(name);
@@ -1361,13 +1813,19 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
     };
   }, [name, store]);
 
-  const field = store.getFieldEntry(name);
-
-  const value = useSignal(field.value);
-  const isTouched = useSignal(field.meta.isTouched);
-  const changeCount = useSignal(field.meta.changeCount);
-  const submitCount = useSignal(field.meta.submitCount);
-  const validation = useSignal(field.validation);
+  const { value, meta, validation } = useFormSelector<
+    T,
+    D,
+    {
+      value: T[K];
+      meta: FieldMeta;
+      validation: ValidationStatus<D>;
+    }
+  >((s) => ({
+    value: s.value(name),
+    meta: s.meta(name),
+    validation: s.validation(name),
+  }));
 
   const setValue = useCallback(
     (value: T[K]) => {
@@ -1385,11 +1843,7 @@ function useField<T extends DefaultValues, K extends keyof T, D = unknown>(
   return {
     name,
     value,
-    meta: {
-      isTouched,
-      changeCount,
-      submitCount,
-    },
+    meta,
     validation,
     setValue,
     blur,
@@ -1425,83 +1879,9 @@ export function createForm<
 >(): CreateFormResult<T, D> {
   return {
     defineField,
+    useFormSelector,
     useField,
     useForm,
-  };
-}
-
-export function experimental_createSingletonForm<
-  T extends DefaultValues,
-  D = unknown,
->(options: UseFormOptions<T>): CreateSingletonFormResult<T, D> {
-  const store = createFormStore<T, D>(options);
-
-  return {
-    defineField,
-    formApi: store.formApi,
-    useField<K extends keyof T>(
-      options: FieldOptions<T, K, D>,
-    ): Prettify<UseFieldReturn<T, K, D>> {
-      const { name, debounceMs, watch, respond, respondAsync, standardSchema } =
-        options;
-
-      useIsomorphicEffect(() => {
-        store.registerOptions(name, {
-          name,
-          debounceMs,
-          respondAsync,
-          watch,
-          respond,
-          standardSchema,
-        } as FieldOptions<T, K, D>);
-
-        return () => {
-          store.unregisterOptions(name);
-        };
-      }, [debounceMs, name, respond, respondAsync, standardSchema, watch]);
-
-      useIsomorphicEffect(() => {
-        store.mount(name);
-
-        return () => {
-          store.unmount(name);
-        };
-      }, [name]);
-
-      const field = store.getFieldEntry(name);
-
-      const value = useSignal(field.value);
-      const isTouched = useSignal(field.meta.isTouched);
-      const changeCount = useSignal(field.meta.changeCount);
-      const submitCount = useSignal(field.meta.submitCount);
-      const validation = useSignal(field.validation);
-
-      const setValue = useCallback(
-        (value: T[K]) => {
-          store.setValue(name, value);
-        },
-        [name],
-      );
-
-      const blur = useCallback(() => {
-        store.blur(name);
-      }, [name]);
-
-      const formApi = useMemo(() => store.formApi, []);
-
-      return {
-        name,
-        value,
-        meta: {
-          isTouched,
-          changeCount,
-          submitCount,
-        },
-        validation,
-        setValue,
-        blur,
-        formApi,
-      };
-    },
+    defineSelector,
   };
 }
