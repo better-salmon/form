@@ -1882,14 +1882,6 @@ function useField<
   const { props, propsEquality = shallow } = propsOptions ?? {};
 
   useIsomorphicEffect(() => {
-    store.mount(name);
-
-    return () => {
-      store.unmount(name);
-    };
-  }, [name, store]);
-
-  useIsomorphicEffect(() => {
     store.registerOptions(name, {
       name,
       debounceMs,
@@ -1903,6 +1895,14 @@ function useField<
       store.unregisterOptions(name);
     };
   }, [debounceMs, name, watch, respond, respondAsync, standardSchema, store]);
+
+  useIsomorphicEffect(() => {
+    store.mount(name);
+
+    return () => {
+      store.unmount(name);
+    };
+  }, [name, store]);
 
   useIsomorphicEffect(() => {
     store.setFieldProps(name, props, propsEquality);
