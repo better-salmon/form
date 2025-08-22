@@ -13,6 +13,7 @@
     "format:check": "prettier --check .",
     "lint": "turbo lint",
     "playwright:install": "playwright install --with-deps chromium chromium-headless-shell",
+    "preview": "turbo preview",
     "test": "vitest run",
     "test:watch": "vitest"
   },
