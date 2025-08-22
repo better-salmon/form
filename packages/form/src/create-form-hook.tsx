@@ -862,7 +862,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   const listeners = new Set<() => void>();
   let version = 0;
   let dirty = false;
-  let renderPhaseChanged = false;
+  const renderPhaseChangedFields = new Set<keyof T>();
 
   function markDirty() {
     dirty = true;
@@ -876,8 +876,8 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     }
   }
 
-  function markRenderPhaseChanged() {
-    renderPhaseChanged = true;
+  function markRenderPhaseChanged(fieldName: keyof T) {
+    renderPhaseChangedFields.add(fieldName);
   }
 
   function getRunningValidation<K extends keyof T>(
@@ -1583,6 +1583,14 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     props: P | undefined,
     equality: (a: P | undefined, b: P | undefined) => boolean = shallow,
   ): void {
+    // If another render-phase update already touched this field during the
+    // same render, avoid a second validation write. Update props eagerly so
+    // the eventual effect-driven dispatch sees the latest props.
+    if (renderPhaseChangedFields.has(fieldName)) {
+      fieldPropsMap.set(fieldName, props);
+      return;
+    }
+
     const prev = fieldPropsMap.get(fieldName) as P | undefined;
     const changed = !equality(prev, props);
     if (!changed) {
@@ -1628,7 +1636,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         entry.validation = result as FinalValidationStatus<D>;
         // Make new snapshot and versions visible to selectors without scheduling a notify
         updateSnapshotAndDepsNoNotify(fieldName, ["validation"]);
-        markRenderPhaseChanged();
+        markRenderPhaseChanged(fieldName);
       }
     }
   }
@@ -1679,8 +1687,8 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     setFieldProps,
     applyFieldPropsDuringRender,
     flushRenderPhaseUpdates: () => {
-      if (renderPhaseChanged) {
-        renderPhaseChanged = false;
+      if (renderPhaseChangedFields.size > 0) {
+        renderPhaseChangedFields.clear();
         notify();
       }
     },
