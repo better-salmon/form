@@ -82,6 +82,7 @@ export default function FormDemo() {
 const nameFieldOptions = defineField({
   name: "name",
   respond: (context, props: { minLength?: number } = {}) => {
+    console.log("name field props", props);
     const { minLength = 3 } = props;
 
     if (context.value.length > minLength) {
@@ -95,6 +96,7 @@ const nameFieldOptions = defineField({
 const emailFieldOptions = defineField({
   name: "email",
   respond: (context, props: { minLength?: number } = {}) => {
+    console.log("email field props", props);
     const { minLength = 3 } = props;
 
     if (context.value.length > minLength) {

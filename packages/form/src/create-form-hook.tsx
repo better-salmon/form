@@ -251,6 +251,12 @@ type FormStore<T extends DefaultValues, D = unknown> = {
     props: P | undefined,
     equality?: (a: P | undefined, b: P | undefined) => boolean,
   ) => void;
+  applyFieldPropsDuringRender: <P>(
+    fieldName: keyof T,
+    props: P | undefined,
+    equality?: (a: P | undefined, b: P | undefined) => boolean,
+  ) => void;
+  flushRenderPhaseUpdates: () => void;
   blur: (fieldName: keyof T) => void;
   submit: (fields?: readonly (keyof T)[]) => void;
   reset: (
@@ -827,6 +833,25 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     markDirty();
   }
 
+  // Variant used during render-phase updates to make new snapshots visible to
+  // selectors without notifying subscribers. This bumps per-slice versions but
+  // intentionally does not mark the store dirty.
+  function updateSnapshotAndDepsNoNotify(
+    fieldName: keyof T,
+    changedSlices: Iterable<SliceId>,
+  ): void {
+    const entry = getFieldEntry(fieldName);
+    entry.snapshot = buildSnapshotFor(fieldName, entry);
+    const seen = new Set<SliceId>();
+    for (const slice of changedSlices) {
+      if (slice !== "snapshot" && !seen.has(slice)) {
+        bumpDepVersion(slice, fieldName);
+        seen.add(slice);
+      }
+    }
+    bumpDepVersion("snapshot", fieldName);
+  }
+
   const maxDispatchSteps = normalizeNumber(options.maxDispatchSteps, {
     fallback: DEFAULT_WATCHER_MAX_STEPS,
     min: 1,
@@ -837,6 +862,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   const listeners = new Set<() => void>();
   let version = 0;
   let dirty = false;
+  let renderPhaseChanged = false;
 
   function markDirty() {
     dirty = true;
@@ -848,6 +874,10 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     for (const l of copy) {
       l();
     }
+  }
+
+  function markRenderPhaseChanged() {
+    renderPhaseChanged = true;
   }
 
   function getRunningValidation<K extends keyof T>(
@@ -1545,6 +1575,64 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     dispatch(fieldName, "props");
   }
 
+  // Apply props during render to coalesce props-driven sync validations into a
+  // single render. This does not dispatch or notify; it only updates the
+  // current field's validation when the field is sync-only (no respondAsync).
+  function applyFieldPropsDuringRender<P>(
+    fieldName: keyof T,
+    props: P | undefined,
+    equality: (a: P | undefined, b: P | undefined) => boolean = shallow,
+  ): void {
+    const prev = fieldPropsMap.get(fieldName) as P | undefined;
+    const changed = !equality(prev, props);
+    if (!changed) {
+      return;
+    }
+    // Set props immediately so selectors in the same render can read them
+    fieldPropsMap.set(fieldName, props);
+
+    // Only attempt sync respond when mounted, options exist, and async is not configured
+    if (!mountedFields.has(fieldName)) {
+      return;
+    }
+    const internal = getFieldOptions(fieldName);
+    if (!internal?.respond || internal.respondAsync) {
+      return;
+    }
+
+    const value = getFieldEntry(fieldName).value;
+    const currentView = getSnapshot(fieldName);
+    const standardSchema = internal.standardSchema;
+
+    const result = internal.respond(
+      {
+        action: "props",
+        cause: { isSelf: true, field: fieldName, action: "props" },
+        value,
+        current: currentView,
+        form,
+        helpers: {
+          validation: validationHelper,
+          validateWithSchema: () =>
+            standardSchema
+              ? standardValidate(standardSchema, value)
+              : undefined,
+        },
+      },
+      props as unknown,
+    );
+
+    if (result !== undefined) {
+      const entry = getFieldEntry(fieldName);
+      if (!deepEqual(entry.validation, result)) {
+        entry.validation = result as FinalValidationStatus<D>;
+        // Make new snapshot and versions visible to selectors without scheduling a notify
+        updateSnapshotAndDepsNoNotify(fieldName, ["validation"]);
+        markRenderPhaseChanged();
+      }
+    }
+  }
+
   // -- Select helpers (first-class)
   const select: SelectHelpers<T, D> = {
     value<K extends keyof T>(name: K): T[K] {
@@ -1589,6 +1677,13 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     unmount,
     setValue,
     setFieldProps,
+    applyFieldPropsDuringRender,
+    flushRenderPhaseUpdates: () => {
+      if (renderPhaseChanged) {
+        renderPhaseChanged = false;
+        notify();
+      }
+    },
     reset,
     submit,
   };
@@ -1787,6 +1882,14 @@ function useField<
   const { props, propsEquality = shallow } = propsOptions ?? {};
 
   useIsomorphicEffect(() => {
+    store.mount(name);
+
+    return () => {
+      store.unmount(name);
+    };
+  }, [name, store]);
+
+  useIsomorphicEffect(() => {
     store.registerOptions(name, {
       name,
       debounceMs,
@@ -1803,15 +1906,14 @@ function useField<
 
   useIsomorphicEffect(() => {
     store.setFieldProps(name, props, propsEquality);
+    // If render-phase updated validation, flush a single notify so subscribers reflect it
+    store.flushRenderPhaseUpdates();
   }, [name, props, propsEquality, store]);
 
-  useIsomorphicEffect(() => {
-    store.mount(name);
-
-    return () => {
-      store.unmount(name);
-    };
-  }, [name, store]);
+  // Coalesce props-driven sync validation into the same render
+  // This is safe because it only mutates the current field slice and does not notify
+  // subscribers; selectors in this render will observe updated snapshots.
+  store.applyFieldPropsDuringRender(name, props, propsEquality);
 
   const { value, meta, validation } = useFormSelector<
     T,
