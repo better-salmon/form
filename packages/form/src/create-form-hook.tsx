@@ -1540,9 +1540,18 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     if (equality(prev, props)) {
       return;
     }
-    fieldPropsMap.set(fieldName, props);
-    // Dispatch props event to allow respond/respondAsync to consider new props
-    dispatch(fieldName, "props");
+    // Check if there are any listeners for the "props" event to avoid unnecessary dispatch
+    const hasPropsListeners =
+      (reactions.get(fieldName)?.get("props")?.size ?? 0) > 0;
+
+    // Wrap set+dispatch in a dispatch transaction for consistency with other mutators
+    runInDispatchTransaction(() => {
+      fieldPropsMap.set(fieldName, props);
+      if (hasPropsListeners) {
+        // Dispatch props event to allow respond/respondAsync to consider new props
+        dispatch(fieldName, "props");
+      }
+    });
   }
 
   // -- Select helpers (first-class)
@@ -1813,19 +1822,18 @@ function useField<
     };
   }, [name, store]);
 
-  const { value, meta, validation } = useFormSelector<
-    T,
-    D,
-    {
-      value: T[K];
-      meta: FieldMeta;
-      validation: ValidationStatus<D>;
-    }
-  >((s) => ({
-    value: s.value(name),
-    meta: s.meta(name),
-    validation: s.validation(name),
-  }));
+  const { value, meta, validation } = useFormSelector(
+    useCallback(
+      (select: SelectHelpers<T, D>) => {
+        return {
+          value: select.value(name),
+          meta: select.meta(name),
+          validation: select.validation(name),
+        };
+      },
+      [name],
+    ),
+  );
 
   const setValue = useCallback(
     (value: T[K]) => {
