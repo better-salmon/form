@@ -8,10 +8,10 @@
       "outputs": ["dist/**", "dist-ssr/**", "build/**"]
     },
     "lint": {
-      "dependsOn": ["form#build", "^lint"]
+      "dependsOn": ["al-formo#build", "^lint"]
     },
     "check-types": {
-      "dependsOn": ["form#build", "^check-types"]
+      "dependsOn": ["al-formo#build", "^check-types"]
     },
     "dev": {
       "cache": false,

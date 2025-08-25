@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createForm, type FieldOptions } from "form";
+import { createForm, type FieldOptions } from "al-formo";
 import { cn } from "@/utils/cn";
 
 type DemoForm = {

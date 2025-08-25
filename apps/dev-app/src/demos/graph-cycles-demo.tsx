@@ -1,4 +1,4 @@
-import { createForm } from "form";
+import { createForm } from "al-formo";
 
 type GraphForm = {
   a2: string;

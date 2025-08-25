@@ -27,6 +27,10 @@ export default defineConfig(({ watch }) => {
     platform: "browser",
     unbundle: !minify,
     tsconfig: "tsconfig.lib.json",
+    publint: {
+      pkgDir: "./",
+      strict: true,
+    },
     dts: {
       tsconfig: "tsconfig.lib.json",
     },

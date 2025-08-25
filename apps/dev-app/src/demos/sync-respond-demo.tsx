@@ -1,4 +1,4 @@
-import { createForm } from "form";
+import { createForm } from "al-formo";
 import type { Branded } from "@/types/types";
 
 type Password = Branded<string, "password">;

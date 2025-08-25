@@ -35,7 +35,7 @@ pnpm test:watch
 pnpm dev
 
 # Install deps (package or app)
-pnpm -F form add <package>
+pnpm -F al-formo add <package>
 
 # Install deps (root)
 pnpm --workspace-root add -D <package>
@@ -46,9 +46,9 @@ pnpm --workspace-root add -D <package>
 Use Turbo filters to scope tasks.
 
 ```bash
-# Library: packages/form
-pnpm build -F form
-pnpm dev -F form
+# Library: packages/al-formo
+pnpm build -F al-formo
+pnpm dev -F al-formo
 
 # App: apps/dev-app
 pnpm build -F dev-app
@@ -64,5 +64,5 @@ The root Vitest config defines projects for `packages/*` and `apps/*`.
 
 ```bash
 # Run tests only for the library
-pnpm test --project form
+pnpm test --project al-formo
 ```
