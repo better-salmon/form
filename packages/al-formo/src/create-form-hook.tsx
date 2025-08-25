@@ -306,6 +306,7 @@ type CreateFormResult<T extends DefaultValues, D = unknown> = {
   defineSelector: <S, P = unknown>(
     selector: (s: SelectHelpers<T, D>, props?: P) => S,
   ) => (s: SelectHelpers<T, D>, props?: P) => S;
+  defineForm: (formOptions: UseFormOptions<T>) => UseFormOptions<T>;
 };
 
 // =====================================
@@ -1624,6 +1625,12 @@ function defineField<
   return options;
 }
 
+function defineForm<T extends DefaultValues>(
+  formOptions: UseFormOptions<T>,
+): UseFormOptions<T> {
+  return formOptions;
+}
+
 function defineSelector<
   T extends DefaultValues,
   D = unknown,
@@ -1854,15 +1861,7 @@ function useField<
 
   const formApi = useMemo(() => store.formApi, [store]);
 
-  return {
-    name,
-    value,
-    meta,
-    validation,
-    setValue,
-    blur,
-    formApi,
-  };
+  return { blur, formApi, meta, name, setValue, validation, value };
 }
 
 export function useForm<T extends DefaultValues, D = unknown>(
@@ -1881,10 +1880,7 @@ export function useForm<T extends DefaultValues, D = unknown>(
 
   const formApi = useMemo(() => formStore.formApi, [formStore]);
 
-  return {
-    formApi,
-    Form,
-  };
+  return { Form, formApi };
 }
 
 export function createForm<
@@ -1893,9 +1889,10 @@ export function createForm<
 >(): CreateFormResult<T, D> {
   return {
     defineField,
-    useFormSelector,
+    defineForm,
+    defineSelector,
     useField,
     useForm,
-    defineSelector,
+    useFormSelector,
   };
 }

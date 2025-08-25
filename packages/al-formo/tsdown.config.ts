@@ -27,11 +27,13 @@ export default defineConfig(({ watch }) => {
     platform: "browser",
     unbundle: !minify,
     tsconfig: "tsconfig.lib.json",
+    sourcemap: true,
     publint: {
       pkgDir: "./",
       strict: true,
     },
     dts: {
+      sourcemap: true,
       tsconfig: "tsconfig.lib.json",
     },
     inputOptions: {

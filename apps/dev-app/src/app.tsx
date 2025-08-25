@@ -11,6 +11,13 @@ const DEMOS = [
     demonstrateIsolation: false,
   },
   {
+    id: "wizard-funnel-demo",
+    name: "Wizard Funnel",
+    component: lazy(() => import("@/demos/wizard-funnel-demo")),
+    description: "Multi-step funnel with step-gated validation",
+    demonstrateIsolation: false,
+  },
+  {
     id: "sync-respond-demo",
     name: "Sync Respond Demo",
     component: lazy(() => import("@/demos/sync-respond-demo")),
