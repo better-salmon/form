@@ -1,4 +1,4 @@
-# Form Hook
+# al-formo
 
 Experimental zero-deps form hook library for React 19, inspired by [TanStack Form](https://tanstack.com/form/latest).
 

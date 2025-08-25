@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
-      "@form": path.resolve(__dirname, "./src"),
+      "@al-formo": path.resolve(__dirname, "./src"),
     },
   },
   test: {

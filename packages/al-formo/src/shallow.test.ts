@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shallow } from "@form/shallow";
+import { shallow } from "@al-formo/shallow";
 
 describe(shallow, () => {
   it("returns true for the same reference", () => {
