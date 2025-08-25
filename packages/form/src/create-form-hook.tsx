@@ -1544,13 +1544,16 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     const hasPropsListeners =
       (reactions.get(fieldName)?.get("props")?.size ?? 0) > 0;
 
+    if (!hasPropsListeners) {
+      fieldPropsMap.set(fieldName, props);
+      return;
+    }
+
     // Wrap set+dispatch in a dispatch transaction for consistency with other mutators
     runInDispatchTransaction(() => {
       fieldPropsMap.set(fieldName, props);
-      if (hasPropsListeners) {
-        // Dispatch props event to allow respond/respondAsync to consider new props
-        dispatch(fieldName, "props");
-      }
+      // Dispatch props event to allow respond/respondAsync to consider new props
+      dispatch(fieldName, "props");
     });
   }
 
