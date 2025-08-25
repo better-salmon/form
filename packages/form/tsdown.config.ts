@@ -26,6 +26,7 @@ export default defineConfig(({ watch }) => {
     target: "chrome138",
     platform: "browser",
     unbundle: !minify,
+    tsconfig: "tsconfig.lib.json",
     dts: {
       tsconfig: "tsconfig.lib.json",
     },
