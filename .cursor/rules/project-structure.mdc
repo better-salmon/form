@@ -6,5 +6,5 @@ alwaysApply: true
 
 This monorepo centers on the form hook library; everything else is support.
 
-- **Core library**: [packages/form](mdc:packages/form) → entry [create-form-hook.tsx](mdc:packages/form/src/create-form-hook.tsx)
+- **Core library**: [packages/al-formo](mdc:packages/al-formo) → entry [create-form-hook.tsx](mdc:packages/al-formo/src/create-form-hook.tsx)
 - **Support apps**: [apps/dev-app](mdc:apps/dev-app/src/app.tsx) (demo), [apps/fake-server](mdc:apps/fake-server/fake-server.ts) (mock API)

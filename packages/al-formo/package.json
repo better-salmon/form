@@ -1,7 +1,17 @@
 {
-  "name": "form",
+  "name": "al-formo",
   "version": "0.1.0",
-  "private": true,
+  "homepage": "https://github.com/better-salmon/form/tree/main/packages/al-formo",
+  "bugs": "https://github.com/better-salmon/form/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/better-salmon/form.git"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Arseny Kruglikov",
+    "email": "better.salmon@proton.me"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -28,6 +38,7 @@
     "@types/node": "24.3.0",
     "@types/react": "19.1.11",
     "eslint": "9.34.0",
+    "publint": "0.3.12",
     "tsdown": "0.14.2",
     "typescript": "5.9.2",
     "vitest": "3.2.4"

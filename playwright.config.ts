@@ -16,7 +16,7 @@ export default defineConfig({
     {
       command: "pnpm dev",
       url: "http://localhost:5173",
-      name: "form",
+      name: "al-formo",
       timeout: 120 * 1000,
       reuseExistingServer: !process.env["CI"],
       stdout: "ignore",

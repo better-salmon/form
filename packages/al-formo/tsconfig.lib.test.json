@@ -23,7 +23,7 @@
     "noPropertyAccessFromIndexSignature": true,
     "baseUrl": ".",
     "paths": {
-      "@form/*": ["./src/*"]
+      "@al-formo/*": ["./src/*"]
     }
   },
   "include": ["./src/**/*.test.ts", "./src/**/*.test.tsx"]

@@ -41,6 +41,8 @@ jobs:
 
       - name: Build App
         run: pnpm build
+        env:
+          MINIFY: "true"
 
       - name: Install Playwright browsers
         run: pnpm playwright:install
