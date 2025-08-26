@@ -527,6 +527,84 @@ describe("Details D propagates through FormApi and async context", () => {
   });
 });
 
+describe("per-field details functionality", () => {
+  type Form = { name: string; email: string; age: number };
+  
+  it("allows different details types per field", () => {
+    const { defineField } = createForm<Form>();
+
+    // Field 1: String details
+    const nameField = defineField<"name", string>({
+      name: "name",
+      respond: (context) => {
+        const result = context.helpers.validation.valid({ 
+          details: "Name validation passed" 
+        });
+        expectTypeOf(result).toExtend<{ details?: string }>();
+        return result;
+      },
+    });
+    expectTypeOf(nameField.name).toEqualTypeOf<"name">();
+
+    // Field 2: Object details  
+    const emailField = defineField<"email", { code: string; provider: string }>({
+      name: "email",
+      respond: (context) => {
+        const result = context.helpers.validation.valid({
+          details: { code: "EMAIL_OK", provider: "gmail" }
+        });
+        expectTypeOf(result).toExtend<{ details?: { code: string; provider: string } }>();
+        return result;
+      },
+    });
+    expectTypeOf(emailField.name).toEqualTypeOf<"email">();
+
+    // Field 3: Number details
+    const ageField = defineField<"age", number>({
+      name: "age", 
+      respond: (context) => {
+        const result = context.helpers.validation.valid({
+          details: 42
+        });
+        expectTypeOf(result).toExtend<{ details?: number }>();
+        return result;
+      },
+    });
+    expectTypeOf(ageField.name).toEqualTypeOf<"age">();
+  });
+
+  it("allows field to override global details type", () => {
+    type GlobalDetails = { timestamp: number };
+    const { defineField } = createForm<Form, GlobalDetails>();
+
+    // Uses global details type
+    const globalField = defineField({
+      name: "name",
+      respond: (context) => {
+        const result = context.helpers.validation.valid({
+          details: { timestamp: Date.now() }
+        });
+        expectTypeOf(result).toExtend<{ details?: GlobalDetails }>();
+        return result;
+      },
+    });
+    expectTypeOf(globalField.name).toEqualTypeOf<"name">();
+
+    // Overrides global details type
+    const overrideField = defineField<"email", string>({
+      name: "email",
+      respond: (context) => {
+        const result = context.helpers.validation.valid({
+          details: "Email specific details"
+        });
+        expectTypeOf(result).toExtend<{ details?: string }>();
+        return result;
+      },
+    });
+    expectTypeOf(overrideField.name).toEqualTypeOf<"email">();
+  });
+});
+
 describe("watch edge cases: self [] and fields include 'mount'", () => {
   type Form = { name: string; email: string };
   const { defineField } = createForm<Form>();

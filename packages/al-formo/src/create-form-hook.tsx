@@ -320,8 +320,8 @@ type CreateFormResult<TValues extends DefaultValues, TDetails = unknown> = {
       props?: TSelectorProps;
     },
   ) => TSelected;
-  useField: <TFieldName extends keyof TValues, TFieldProps = unknown>(
-    options: FieldOptions<TValues, TFieldName, TDetails, TFieldProps>,
+  useField: <TFieldName extends keyof TValues, TFieldDetails = TDetails, TFieldProps = unknown>(
+    options: FieldOptions<TValues, TFieldName, TFieldDetails, TFieldProps>,
     propsOptions?: {
       props?: TFieldProps;
       propsEquality?: (
@@ -329,10 +329,10 @@ type CreateFormResult<TValues extends DefaultValues, TDetails = unknown> = {
         b: TFieldProps | undefined,
       ) => boolean;
     },
-  ) => Prettify<UseFieldReturn<TValues, TFieldName, TDetails>>;
-  defineField: <TFieldName extends keyof TValues, TFieldProps = unknown>(
-    options: FieldOptions<TValues, TFieldName, TDetails, TFieldProps>,
-  ) => FieldOptions<TValues, TFieldName, TDetails, TFieldProps>;
+  ) => Prettify<UseFieldReturn<TValues, TFieldName, TFieldDetails>>;
+  defineField: <TFieldName extends keyof TValues, TFieldDetails = TDetails, TFieldProps = unknown>(
+    options: FieldOptions<TValues, TFieldName, TFieldDetails, TFieldProps>,
+  ) => FieldOptions<TValues, TFieldName, TFieldDetails, TFieldProps>;
   defineSelector: <TSelected, TSelectorProps = unknown>(
     selector: (
       s: SelectHelpers<TValues, TDetails>,
