@@ -246,9 +246,9 @@ type FormStore<TValues extends DefaultValues, TDetails = unknown> = {
   getDepVersion: (depKey: DepKey) => number;
   select: SelectHelpers<TValues, TDetails>;
   mount: (fieldName: keyof TValues) => void;
-  registerOptions: <TFieldName extends keyof TValues, TFieldProps = unknown>(
+  registerOptions: <TFieldName extends keyof TValues, TFieldDetails = TDetails, TFieldProps = unknown>(
     fieldName: TFieldName,
-    options: FieldOptions<TValues, TFieldName, TDetails, TFieldProps>,
+    options: FieldOptions<TValues, TFieldName, TFieldDetails, TFieldProps>,
   ) => void;
   unregisterOptions: (fieldName: keyof TValues) => void;
   unmount: (fieldName: keyof TValues) => void;
@@ -1646,12 +1646,13 @@ function createFormStore<TValues extends DefaultValues, TDetails = unknown>(
 
   function registerOptions<
     TFieldName extends keyof TValues,
+    TFieldDetails = TDetails,
     TFieldProps = unknown,
   >(
     fieldName: TFieldName,
-    options: FieldOptions<TValues, TFieldName, TDetails, TFieldProps>,
+    options: FieldOptions<TValues, TFieldName, TFieldDetails, TFieldProps>,
   ) {
-    setFieldOptions(fieldName, options);
+    setFieldOptions(fieldName, options as FieldOptions<TValues, TFieldName, TDetails, TFieldProps>);
   }
 
   function unregisterOptions(fieldName: keyof TValues) {
@@ -1962,7 +1963,7 @@ function useField<
     ) => boolean;
   },
 ): Prettify<UseFieldReturn<TValues, TFieldName, TDetails>> {
-  const store = use(StoreContext) as FormStore<TValues, TDetails> | null;
+  const store = use(StoreContext) as FormStore<TValues, unknown> | null;
 
   invariant(store, "useField must be used within a FormProvider");
 
@@ -2000,11 +2001,11 @@ function useField<
 
   const { value, meta, validation } = useFormSelector(
     useCallback(
-      (select: SelectHelpers<TValues, TDetails>) => {
+      (select: SelectHelpers<TValues, unknown>) => {
         return {
           value: select.value(name),
           meta: select.meta(name),
-          validation: select.validation(name),
+          validation: select.validation(name) as ValidationStatus<TDetails>,
         };
       },
       [name],
@@ -2022,7 +2023,7 @@ function useField<
     store.blur(name);
   }, [name, store]);
 
-  const formApi = useMemo(() => store.formApi, [store]);
+  const formApi = useMemo(() => store.formApi as FormApi<TValues, TDetails>, [store]);
 
   return { blur, formApi, meta, name, setValue, validation, value };
 }
