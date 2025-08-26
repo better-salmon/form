@@ -52,57 +52,57 @@ declare const FLOW_CONTROL_BRAND: unique symbol;
 // Field State Types
 // =====================================
 
-type FieldStateValid<D = unknown> = {
+type FieldStateValid<TDetails = unknown> = {
   type: "valid";
-  details?: D;
+  details?: TDetails;
   readonly [FIELD_STATE_BRAND]: true;
 };
 
-type FieldStateInvalid<D = unknown> = {
+type FieldStateInvalid<TDetails = unknown> = {
   type: "invalid";
   issues: readonly StandardSchemaV1.Issue[];
-  details?: D;
+  details?: TDetails;
   readonly [FIELD_STATE_BRAND]: true;
 };
 
-type FieldStateWarning<D = unknown> = {
+type FieldStateWarning<TDetails = unknown> = {
   type: "warning";
   issues: readonly StandardSchemaV1.Issue[];
-  details?: D;
+  details?: TDetails;
   readonly [FIELD_STATE_BRAND]: true;
 };
 
-type FieldStatePending<D = unknown> = {
+type FieldStatePending<TDetails = unknown> = {
   type: "pending";
-  details?: D;
+  details?: TDetails;
   readonly [FIELD_STATE_BRAND]: true;
 };
 
-type FieldStateValidating<D = unknown> = {
+type FieldStateValidating<TDetails = unknown> = {
   type: "validating";
-  details?: D;
+  details?: TDetails;
   readonly [FIELD_STATE_BRAND]: true;
 };
 
-type FieldStateIdle<D = unknown> = {
+type FieldStateIdle<TDetails = unknown> = {
   type: "idle";
-  details?: D;
+  details?: TDetails;
   readonly [FIELD_STATE_BRAND]: true;
 };
 
-export type ValidationStatus<D = unknown> =
-  | FieldStateValid<D>
-  | FieldStateInvalid<D>
-  | FieldStateWarning<D>
-  | FieldStatePending<D>
-  | FieldStateValidating<D>
-  | FieldStateIdle<D>;
+export type ValidationStatus<TDetails = unknown> =
+  | FieldStateValid<TDetails>
+  | FieldStateInvalid<TDetails>
+  | FieldStateWarning<TDetails>
+  | FieldStatePending<TDetails>
+  | FieldStateValidating<TDetails>
+  | FieldStateIdle<TDetails>;
 
-export type FinalValidationStatus<D = unknown> =
-  | FieldStateIdle<D>
-  | FieldStateValid<D>
-  | FieldStateInvalid<D>
-  | FieldStateWarning<D>;
+export type FinalValidationStatus<TDetails = unknown> =
+  | FieldStateIdle<TDetails>
+  | FieldStateValid<TDetails>
+  | FieldStateInvalid<TDetails>
+  | FieldStateWarning<TDetails>;
 
 // =====================================
 // Validation Flow Types
@@ -141,10 +141,10 @@ export type FieldMeta = {
   submitCount: number;
 };
 
-export type FieldSnapshot<T, D = unknown> = {
-  value: T;
+export type FieldSnapshot<TFieldValue, TDetails = unknown> = {
+  value: TFieldValue;
   meta: FieldMeta;
-  validation: ValidationStatus<D>;
+  validation: ValidationStatus<TDetails>;
   isMounted: boolean;
 };
 
@@ -154,159 +154,195 @@ type ScheduleHelper = {
   run(debounceMs?: number): ValidationFlowForce;
 };
 
-type ValidationHelper<D = unknown> = {
-  valid(p?: { details?: D }): FieldStateValid<D>;
+type ValidationHelper<TDetails = unknown> = {
+  valid(p?: { details?: TDetails }): FieldStateValid<TDetails>;
   invalid(p?: {
     issues?: readonly StandardSchemaV1.Issue[];
-    details?: D;
-  }): FieldStateInvalid<D>;
+    details?: TDetails;
+  }): FieldStateInvalid<TDetails>;
   warning(p?: {
     issues?: readonly StandardSchemaV1.Issue[];
-    details?: D;
-  }): FieldStateWarning<D>;
-  idle(p?: { details?: D }): FieldStateIdle<D>;
+    details?: TDetails;
+  }): FieldStateWarning<TDetails>;
+  idle(p?: { details?: TDetails }): FieldStateIdle<TDetails>;
 };
 
 // =====================================
 // Storage Types
 // =====================================
 
-type FieldEntry<V, D = unknown> = {
-  value: V;
+type FieldEntry<TFieldValue, TDetails = unknown> = {
+  value: TFieldValue;
   meta: FieldMeta;
-  validation: ValidationStatus<D>;
-  snapshot: FieldSnapshot<V, D>;
+  validation: ValidationStatus<TDetails>;
+  snapshot: FieldSnapshot<TFieldValue, TDetails>;
 };
 
-type FieldMap<T extends DefaultValues, D = unknown> = Map<
-  keyof T,
-  FieldEntry<T[keyof T], D>
+type FieldMap<TValues extends DefaultValues, TDetails = unknown> = Map<
+  keyof TValues,
+  FieldEntry<TValues[keyof TValues], TDetails>
 >;
 
 // =====================================
 // Internal Types
 // =====================================
 
-type RunningValidation<T> = {
-  stateSnapshot: T;
+type RunningValidation<TFieldValue> = {
+  stateSnapshot: TFieldValue;
   timeoutId?: ReturnType<typeof setTimeout>;
   abortController?: AbortController;
   validationId?: number;
 };
 
-type InternalFieldOptions<T extends DefaultValues, K extends keyof T, D> = {
-  name: K;
-  standardSchema?: StandardSchemaV1<T[K]>;
+type InternalFieldOptions<
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails,
+> = {
+  name: TFieldName;
+  standardSchema?: StandardSchemaV1<TValues[TFieldName]>;
   debounceMs?: number;
   respond?: (
-    context: RespondContext<T, K, D> | RespondContextSync<T, K, D>,
+    context:
+      | RespondContext<TValues, TFieldName, TDetails>
+      | RespondContextSync<TValues, TFieldName, TDetails>,
     props?: unknown,
-  ) => FinalValidationStatus<D> | ValidationSchedule | void;
+  ) => FinalValidationStatus<TDetails> | ValidationSchedule | void;
   respondAsync?: (
-    context: RespondAsyncContext<T, K, D>,
+    context: RespondAsyncContext<TValues, TFieldName, TDetails>,
     props?: unknown,
-  ) => Promise<FinalValidationStatus<D>>;
+  ) => Promise<FinalValidationStatus<TDetails>>;
   watch: {
     self: Set<FieldEvent>;
-    from: Map<Exclude<keyof T, K>, Set<FieldEvent>>;
+    from: Map<Exclude<keyof TValues, TFieldName>, Set<FieldEvent>>;
   };
 };
 
-type InternalValidationHelper<D = unknown> = {
-  pending: (props?: { details?: D }) => FieldStatePending<D>;
-  validating: (props?: { details?: D }) => FieldStateValidating<D>;
+type InternalValidationHelper<TDetails = unknown> = {
+  pending: (props?: { details?: TDetails }) => FieldStatePending<TDetails>;
+  validating: (props?: {
+    details?: TDetails;
+  }) => FieldStateValidating<TDetails>;
 };
 
 // =====================================
 // Store and Hook Types
 // =====================================
 
-type FormApi<T extends DefaultValues, D = unknown> = {
-  getSnapshot: <K extends keyof T>(fieldName: K) => FieldSnapshot<T[K], D>;
+type FormApi<TValues extends DefaultValues, TDetails = unknown> = {
+  getSnapshot: <TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+  ) => FieldSnapshot<TValues[TFieldName], TDetails>;
 };
 
-type FormStore<T extends DefaultValues, D = unknown> = {
-  formApi: FormApi<T, D>;
-  getFieldEntry: <K extends keyof T>(fieldName: K) => FieldEntry<T[K], D>;
+type FormStore<TValues extends DefaultValues, TDetails = unknown> = {
+  formApi: FormApi<TValues, TDetails>;
+  getFieldEntry: <TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+  ) => FieldEntry<TValues[TFieldName], TDetails>;
   // Reactivity
   subscribe: (listener: () => void) => () => void;
   getVersion: () => number;
   getDepVersion: (depKey: DepKey) => number;
-  select: SelectHelpers<T, D>;
-  mount: (fieldName: keyof T) => void;
-  registerOptions: <K extends keyof T, P = unknown>(
-    fieldName: K,
-    options: FieldOptions<T, K, D, P>,
+  select: SelectHelpers<TValues, TDetails>;
+  mount: (fieldName: keyof TValues) => void;
+  registerOptions: <TFieldName extends keyof TValues, TFieldProps = unknown>(
+    fieldName: TFieldName,
+    options: FieldOptions<TValues, TFieldName, TDetails, TFieldProps>,
   ) => void;
-  unregisterOptions: (fieldName: keyof T) => void;
-  unmount: (fieldName: keyof T) => void;
+  unregisterOptions: (fieldName: keyof TValues) => void;
+  unmount: (fieldName: keyof TValues) => void;
   setValue: (
-    fieldName: keyof T,
-    value: T[keyof T],
+    fieldName: keyof TValues,
+    value: TValues[keyof TValues],
     options?: {
       markTouched?: boolean;
       incrementChanges?: boolean;
       dispatch?: boolean;
     },
   ) => void;
-  setFieldProps: <P>(
-    fieldName: keyof T,
-    props: P | undefined,
-    equality?: (a: P | undefined, b: P | undefined) => boolean,
+  setFieldProps: <TFieldProps>(
+    fieldName: keyof TValues,
+    props: TFieldProps | undefined,
+    equality?: (
+      a: TFieldProps | undefined,
+      b: TFieldProps | undefined,
+    ) => boolean,
   ) => void;
-  blur: (fieldName: keyof T) => void;
-  submit: (fields?: readonly (keyof T)[]) => void;
+  blur: (fieldName: keyof TValues) => void;
+  submit: (fields?: readonly (keyof TValues)[]) => void;
   reset: (
-    fieldName: keyof T,
+    fieldName: keyof TValues,
     options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
   ) => void;
 };
 
-type UseFieldReturn<T extends DefaultValues, K extends keyof T, D = unknown> = {
-  name: K;
-  value: T[K];
+type UseFieldReturn<
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails = unknown,
+> = {
+  name: TFieldName;
+  value: TValues[TFieldName];
   meta: FieldMeta;
-  validation: ValidationStatus<D>;
-  setValue: (value: T[K]) => void;
+  validation: ValidationStatus<TDetails>;
+  setValue: (value: TValues[TFieldName]) => void;
   blur: () => void;
-  formApi: FormApi<T, D>;
+  formApi: FormApi<TValues, TDetails>;
 };
 
-export type UseFormReturn<T extends DefaultValues, D = unknown> = {
-  formApi: FormApi<T, D>;
+export type UseFormReturn<TValues extends DefaultValues, TDetails = unknown> = {
+  formApi: FormApi<TValues, TDetails>;
   Form: (props: React.ComponentProps<"form">) => React.ReactElement;
 };
 
-type UseFormOptions<T extends DefaultValues> = {
-  defaultValues: T;
+type UseFormOptions<TValues extends DefaultValues> = {
+  defaultValues: TValues;
   debounceMs?: number;
   maxDispatchSteps?: number;
 };
 
-type CreateFormResult<T extends DefaultValues, D = unknown> = {
-  useForm: (options: UseFormOptions<T>) => UseFormReturn<T, D>;
-  useFormSelector: <S, P = unknown>(
-    selector: (s: SelectHelpers<T, D>, props?: P) => S,
+type CreateFormResult<TValues extends DefaultValues, TDetails = unknown> = {
+  useForm: (
+    options: UseFormOptions<TValues>,
+  ) => UseFormReturn<TValues, TDetails>;
+  useFormSelector: <TSelected, TSelectorProps = unknown>(
+    selector: (
+      s: SelectHelpers<TValues, TDetails>,
+      props?: TSelectorProps,
+    ) => TSelected,
     options?: {
-      selectorEquality?: (a: S, b: S) => boolean;
-      propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
-      props?: P;
+      selectorEquality?: (a: TSelected, b: TSelected) => boolean;
+      propsEquality?: (
+        a: TSelectorProps | undefined,
+        b: TSelectorProps | undefined,
+      ) => boolean;
+      props?: TSelectorProps;
     },
-  ) => S;
-  useField: <K extends keyof T, P = unknown>(
-    options: FieldOptions<T, K, D, P>,
+  ) => TSelected;
+  useField: <TFieldName extends keyof TValues, TFieldProps = unknown>(
+    options: FieldOptions<TValues, TFieldName, TDetails, TFieldProps>,
     propsOptions?: {
-      props?: P;
-      propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
+      props?: TFieldProps;
+      propsEquality?: (
+        a: TFieldProps | undefined,
+        b: TFieldProps | undefined,
+      ) => boolean;
     },
-  ) => Prettify<UseFieldReturn<T, K, D>>;
-  defineField: <K extends keyof T, P = unknown>(
-    options: FieldOptions<T, K, D, P>,
-  ) => FieldOptions<T, K, D, P>;
-  defineSelector: <S, P = unknown>(
-    selector: (s: SelectHelpers<T, D>, props?: P) => S,
-  ) => (s: SelectHelpers<T, D>, props?: P) => S;
-  defineForm: (formOptions: UseFormOptions<T>) => UseFormOptions<T>;
+  ) => Prettify<UseFieldReturn<TValues, TFieldName, TDetails>>;
+  defineField: <TFieldName extends keyof TValues, TFieldProps = unknown>(
+    options: FieldOptions<TValues, TFieldName, TDetails, TFieldProps>,
+  ) => FieldOptions<TValues, TFieldName, TDetails, TFieldProps>;
+  defineSelector: <TSelected, TSelectorProps = unknown>(
+    selector: (
+      s: SelectHelpers<TValues, TDetails>,
+      props?: TSelectorProps,
+    ) => TSelected,
+  ) => (
+    s: SelectHelpers<TValues, TDetails>,
+    props?: TSelectorProps,
+  ) => TSelected;
+  defineForm: (formOptions: UseFormOptions<TValues>) => UseFormOptions<TValues>;
 };
 
 // =====================================
@@ -353,19 +389,26 @@ type SliceId = "value" | "meta" | "validation" | "mounted" | "snapshot";
 
 type DepKey = { slice: SliceId; field: PropertyKey };
 
-function makeCauseForTarget<T extends DefaultValues, K extends keyof T>(
-  target: K,
-  causeField: keyof T,
+function makeCauseForTarget<
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+>(
+  target: TFieldName,
+  causeField: keyof TValues,
   action: FieldEvent,
 ):
-  | { isSelf: true; field: K; action: FieldEvent }
-  | { isSelf: false; field: Exclude<keyof T, K>; action: FieldEvent } {
+  | { isSelf: true; field: TFieldName; action: FieldEvent }
+  | {
+      isSelf: false;
+      field: Exclude<keyof TValues, TFieldName>;
+      action: FieldEvent;
+    } {
   if (causeField === target) {
     return { isSelf: true, field: target, action };
   }
   return {
     isSelf: false,
-    field: causeField as Exclude<keyof T, K>,
+    field: causeField as Exclude<keyof TValues, TFieldName>,
     action,
   };
 }
@@ -374,10 +417,10 @@ function makeCauseForTarget<T extends DefaultValues, K extends keyof T>(
 // Respond Contexts (sync/async)
 // =====================================
 
-type FieldFormApi<T extends DefaultValues, D = unknown> = {
-  setValue: <F extends keyof T>(
-    fieldName: F,
-    value: T[F],
+type FieldFormApi<TValues extends DefaultValues, TDetails = unknown> = {
+  setValue: <TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+    value: TValues[TFieldName],
     options?: {
       markTouched?: boolean;
       incrementChanges?: boolean;
@@ -385,30 +428,39 @@ type FieldFormApi<T extends DefaultValues, D = unknown> = {
     },
   ) => void;
   reset: (
-    fieldName: keyof T,
+    fieldName: keyof TValues,
     options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
   ) => void;
-  touch: (fieldName: keyof T) => void;
-  submit: (fields?: readonly (keyof T)[]) => void;
-  getSnapshot: <F extends keyof T>(fieldName: F) => FieldSnapshot<T[F], D>;
+  touch: (fieldName: keyof TValues) => void;
+  submit: (fields?: readonly (keyof TValues)[]) => void;
+  getSnapshot: <TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+  ) => FieldSnapshot<TValues[TFieldName], TDetails>;
 };
 
-type FieldCause<T extends DefaultValues, K extends keyof T> =
-  | { isSelf: true; field: K; action: FieldEvent }
-  | { isSelf: false; field: Exclude<keyof T, K>; action: FieldEvent };
+type FieldCause<
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+> =
+  | { isSelf: true; field: TFieldName; action: FieldEvent }
+  | {
+      isSelf: false;
+      field: Exclude<keyof TValues, TFieldName>;
+      action: FieldEvent;
+    };
 
 export type RespondContext<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails = unknown,
 > = {
   action: FieldEvent;
-  cause: FieldCause<T, K>;
-  value: T[K];
-  current: Prettify<FieldSnapshot<T[K], D>>;
-  form: FieldFormApi<T, D>;
+  cause: FieldCause<TValues, TFieldName>;
+  value: TValues[TFieldName];
+  current: Prettify<FieldSnapshot<TValues[TFieldName], TDetails>>;
+  form: FieldFormApi<TValues, TDetails>;
   helpers: {
-    validation: ValidationHelper<D>;
+    validation: ValidationHelper<TDetails>;
     schedule: ScheduleHelper;
     validateWithSchema: () => readonly StandardSchemaV1.Issue[] | undefined;
   };
@@ -416,38 +468,38 @@ export type RespondContext<
 
 // Sync-only variant of RespondContext without the schedule helper (no async flow control)
 export type RespondContextSync<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails = unknown,
 > = {
   action: FieldEvent;
-  cause: FieldCause<T, K>;
-  value: T[K];
-  current: Prettify<FieldSnapshot<T[K], D>>;
-  form: FieldFormApi<T, D>;
+  cause: FieldCause<TValues, TFieldName>;
+  value: TValues[TFieldName];
+  current: Prettify<FieldSnapshot<TValues[TFieldName], TDetails>>;
+  form: FieldFormApi<TValues, TDetails>;
   helpers: {
-    validation: ValidationHelper<D>;
+    validation: ValidationHelper<TDetails>;
     validateWithSchema: () => readonly StandardSchemaV1.Issue[] | undefined;
   };
 };
 
 type RespondAsyncContext<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails = unknown,
 > = {
   action: FieldEvent;
-  cause: FieldCause<T, K>;
-  value: T[K];
-  current: Prettify<FieldSnapshot<T[K], D>>;
+  cause: FieldCause<TValues, TFieldName>;
+  value: TValues[TFieldName];
+  current: Prettify<FieldSnapshot<TValues[TFieldName], TDetails>>;
   signal: AbortSignal;
   helpers: {
-    validation: ValidationHelper<D>;
+    validation: ValidationHelper<TDetails>;
     validateWithSchemaAsync: () => Promise<
       readonly StandardSchemaV1.Issue[] | undefined
     >;
   };
-  form: FieldFormApi<T, D>;
+  form: FieldFormApi<TValues, TDetails>;
 };
 
 // =====================================
@@ -455,68 +507,74 @@ type RespondAsyncContext<
 // =====================================
 
 type SyncOnlyFieldOptionsExtension<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-  P = unknown,
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails = unknown,
+  TFieldProps = unknown,
 > = {
-  standardSchema?: StandardSchemaV1<T[K]>;
+  standardSchema?: StandardSchemaV1<TValues[TFieldName]>;
   watch?: {
     self?: FieldEvent[];
-    fields?: [Exclude<keyof T, K>] extends [never]
+    fields?: [Exclude<keyof TValues, TFieldName>] extends [never]
       ? never
-      : Partial<Record<Exclude<keyof T, K>, FieldEvent[] | true>>;
+      : Partial<
+          Record<Exclude<keyof TValues, TFieldName>, FieldEvent[] | true>
+        >;
   };
   respond: (
-    context: Prettify<RespondContextSync<T, K, D>>,
-    props?: P,
-  ) => FinalValidationStatus<D> | void;
+    context: Prettify<RespondContextSync<TValues, TFieldName, TDetails>>,
+    props?: TFieldProps,
+  ) => FinalValidationStatus<TDetails> | void;
   respondAsync?: never;
   debounceMs?: never;
 };
 
 type AsyncOnlyFieldOptionsExtension<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-  P = unknown,
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails = unknown,
+  TFieldProps = unknown,
 > = {
-  standardSchema?: StandardSchemaV1<T[K]>;
+  standardSchema?: StandardSchemaV1<TValues[TFieldName]>;
   watch?: {
     self?: FieldEvent[];
-    fields?: [Exclude<keyof T, K>] extends [never]
+    fields?: [Exclude<keyof TValues, TFieldName>] extends [never]
       ? never
-      : Partial<Record<Exclude<keyof T, K>, FieldEvent[] | true>>;
+      : Partial<
+          Record<Exclude<keyof TValues, TFieldName>, FieldEvent[] | true>
+        >;
   };
   respond?: never;
   respondAsync: (
-    context: Prettify<RespondAsyncContext<T, K, D>>,
-    props?: P,
-  ) => Promise<FinalValidationStatus<D>>;
+    context: Prettify<RespondAsyncContext<TValues, TFieldName, TDetails>>,
+    props?: TFieldProps,
+  ) => Promise<FinalValidationStatus<TDetails>>;
   debounceMs?: number;
 };
 
 type SyncAsyncFieldOptionsExtension<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-  P = unknown,
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails = unknown,
+  TFieldProps = unknown,
 > = {
-  standardSchema?: StandardSchemaV1<T[K]>;
+  standardSchema?: StandardSchemaV1<TValues[TFieldName]>;
   watch?: {
     self?: FieldEvent[];
-    fields?: [Exclude<keyof T, K>] extends [never]
+    fields?: [Exclude<keyof TValues, TFieldName>] extends [never]
       ? never
-      : Partial<Record<Exclude<keyof T, K>, FieldEvent[] | true>>;
+      : Partial<
+          Record<Exclude<keyof TValues, TFieldName>, FieldEvent[] | true>
+        >;
   };
   respond: (
-    context: Prettify<RespondContext<T, K, D>>,
-    props?: P,
-  ) => FinalValidationStatus<D> | ValidationSchedule | void;
+    context: Prettify<RespondContext<TValues, TFieldName, TDetails>>,
+    props?: TFieldProps,
+  ) => FinalValidationStatus<TDetails> | ValidationSchedule | void;
   respondAsync: (
-    context: Prettify<RespondAsyncContext<T, K, D>>,
-    props?: P,
-  ) => Promise<FinalValidationStatus<D>>;
+    context: Prettify<RespondAsyncContext<TValues, TFieldName, TDetails>>,
+    props?: TFieldProps,
+  ) => Promise<FinalValidationStatus<TDetails>>;
   debounceMs?: number;
 };
 
@@ -529,17 +587,17 @@ type NoValidationFieldOptionsExtension = {
 };
 
 export type FieldOptions<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-  P = unknown,
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails = unknown,
+  TFieldProps = unknown,
 > = Prettify<
   {
-    name: K;
+    name: TFieldName;
   } & (
-    | SyncOnlyFieldOptionsExtension<T, K, D, P>
-    | AsyncOnlyFieldOptionsExtension<T, K, D, P>
-    | SyncAsyncFieldOptionsExtension<T, K, D, P>
+    | SyncOnlyFieldOptionsExtension<TValues, TFieldName, TDetails, TFieldProps>
+    | AsyncOnlyFieldOptionsExtension<TValues, TFieldName, TDetails, TFieldProps>
+    | SyncAsyncFieldOptionsExtension<TValues, TFieldName, TDetails, TFieldProps>
     | NoValidationFieldOptionsExtension
   )
 >;
@@ -548,10 +606,10 @@ export type FieldOptions<
 // Async Flow Helpers
 // =====================================
 
-function shouldSkipAutoValidation<V>(
-  running: RunningValidation<V> | undefined,
-  currentValue: V,
-  lastValue: V | undefined,
+function shouldSkipAutoValidation<TFieldValue>(
+  running: RunningValidation<TFieldValue> | undefined,
+  currentValue: TFieldValue,
+  lastValue: TFieldValue | undefined,
   lastChanges: number | undefined,
   currentChanges: number,
 ): boolean {
@@ -587,20 +645,20 @@ function run(debounceMs?: number): ValidationFlowForce {
 }
 
 function normalizeFieldOptions<
-  T extends DefaultValues,
-  K extends keyof T,
-  D,
-  P,
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails,
+  TFieldProps,
 >(
-  fieldName: K,
-  options: FieldOptions<T, K, D, P>,
-): InternalFieldOptions<T, K, D> {
+  fieldName: TFieldName,
+  options: FieldOptions<TValues, TFieldName, TDetails, TFieldProps>,
+): InternalFieldOptions<TValues, TFieldName, TDetails> {
   const triggersSelf = new Set<FieldEvent>(options.watch?.self ?? EVENTS);
-  const from = new Map<Exclude<keyof T, K>, Set<FieldEvent>>();
+  const from = new Map<Exclude<keyof TValues, TFieldName>, Set<FieldEvent>>();
   if (options.watch?.fields) {
     for (const key of Object.keys(options.watch.fields) as Exclude<
-      keyof T,
-      K
+      keyof TValues,
+      TFieldName
     >[]) {
       const val = options.watch.fields[key];
       const actions = new Set<FieldEvent>(val === true ? EVENTS : (val ?? []));
@@ -612,15 +670,17 @@ function normalizeFieldOptions<
     standardSchema: options.standardSchema,
     debounceMs: options.debounceMs,
     respond: options.respond as (
-      context: RespondContext<T, K, D> | RespondContextSync<T, K, D>,
+      context:
+        | RespondContext<TValues, TFieldName, TDetails>
+        | RespondContextSync<TValues, TFieldName, TDetails>,
       props?: unknown,
-    ) => FinalValidationStatus<D> | ValidationSchedule | void,
+    ) => FinalValidationStatus<TDetails> | ValidationSchedule | void,
     respondAsync: options.respondAsync as (
-      context: RespondAsyncContext<T, K, D>,
+      context: RespondAsyncContext<TValues, TFieldName, TDetails>,
       props?: unknown,
-    ) => Promise<FinalValidationStatus<D>>,
+    ) => Promise<FinalValidationStatus<TDetails>>,
     watch: { self: triggersSelf, from },
-  } satisfies InternalFieldOptions<T, K, D>;
+  } satisfies InternalFieldOptions<TValues, TFieldName, TDetails>;
 }
 
 const StoreContext = createContext<unknown>(null);
@@ -629,12 +689,12 @@ const StoreContext = createContext<unknown>(null);
 // Provider Component
 // =====================================
 
-function FormProvider<T extends DefaultValues, D = unknown>({
+function FormProvider<TValues extends DefaultValues, TDetails = unknown>({
   children,
   formStore,
 }: Readonly<{
   children: React.ReactNode;
-  formStore: FormStore<T, D>;
+  formStore: FormStore<TValues, TDetails>;
 }>) {
   return <StoreContext value={formStore}>{children}</StoreContext>;
 }
@@ -653,9 +713,9 @@ function invariant(condition: unknown, message: string): asserts condition {
 // Store Implementation
 // =====================================
 
-function createFormStore<T extends DefaultValues, D = unknown>(
-  options: UseFormOptions<T>,
-): FormStore<T, D> {
+function createFormStore<TValues extends DefaultValues, TDetails = unknown>(
+  options: UseFormOptions<TValues>,
+): FormStore<TValues, TDetails> {
   const { defaultValues } = options;
 
   const defaultDebounceMs = normalizeDebounceMs(
@@ -663,49 +723,62 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   );
 
   // -- Validation constructors
-  function valid(props?: { details?: D }): FieldStateValid<D> {
-    return { type: "valid", details: props?.details } as FieldStateValid<D>;
+  function valid(props?: { details?: TDetails }): FieldStateValid<TDetails> {
+    return {
+      type: "valid",
+      details: props?.details,
+    } as FieldStateValid<TDetails>;
   }
 
   function invalid(props?: {
     issues?: readonly StandardSchemaV1.Issue[];
-    details?: D;
-  }): FieldStateInvalid<D> {
+    details?: TDetails;
+  }): FieldStateInvalid<TDetails> {
     return {
       type: "invalid",
       issues: props?.issues ?? [],
       details: props?.details,
-    } as FieldStateInvalid<D>;
+    } as FieldStateInvalid<TDetails>;
   }
 
   function warning(props?: {
     issues?: readonly StandardSchemaV1.Issue[];
-    details?: D;
-  }): FieldStateWarning<D> {
+    details?: TDetails;
+  }): FieldStateWarning<TDetails> {
     return {
       type: "warning",
       issues: props?.issues ?? [],
       details: props?.details,
-    } as FieldStateWarning<D>;
+    } as FieldStateWarning<TDetails>;
   }
 
-  function idle(props?: { details?: D }): FieldStateIdle<D> {
-    return { type: "idle", details: props?.details } as FieldStateIdle<D>;
+  function idle(props?: { details?: TDetails }): FieldStateIdle<TDetails> {
+    return {
+      type: "idle",
+      details: props?.details,
+    } as FieldStateIdle<TDetails>;
   }
 
-  function pending(props?: { details?: D }): FieldStatePending<D> {
-    return { type: "pending", details: props?.details } as FieldStatePending<D>;
+  function pending(props?: {
+    details?: TDetails;
+  }): FieldStatePending<TDetails> {
+    return {
+      type: "pending",
+      details: props?.details,
+    } as FieldStatePending<TDetails>;
   }
 
-  function validating(props?: { details?: D }): FieldStateValidating<D> {
+  function validating(props?: {
+    details?: TDetails;
+  }): FieldStateValidating<TDetails> {
     return {
       type: "validating",
       details: props?.details,
-    } as FieldStateValidating<D>;
+    } as FieldStateValidating<TDetails>;
   }
 
   // -- Helper bundles exposed to user callbacks
-  const validationHelper: ValidationHelper<D> = {
+  const validationHelper: ValidationHelper<TDetails> = {
     idle,
     invalid,
     valid,
@@ -714,7 +787,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
 
   const scheduleHelper: ScheduleHelper = { auto, run, skip };
 
-  const internalValidationHelper: InternalValidationHelper<D> = {
+  const internalValidationHelper: InternalValidationHelper<TDetails> = {
     validating,
     pending,
   };
@@ -728,11 +801,11 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   };
 
   // -- Form state containers
-  const fieldsMap: FieldMap<T, D> = new Map();
+  const fieldsMap: FieldMap<TValues, TDetails> = new Map();
 
   const defaultValuesEntries = Object.entries(defaultValues) as [
-    fieldName: keyof T,
-    value: T[keyof T],
+    fieldName: keyof TValues,
+    value: TValues[keyof TValues],
   ][];
 
   for (const [fieldName, value] of defaultValuesEntries) {
@@ -741,8 +814,8 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       changeCount: 0,
       submitCount: 0,
     };
-    const validation = validationHelper.idle() as ValidationStatus<D>;
-    const snapshot: FieldSnapshot<T[typeof fieldName], D> = {
+    const validation = validationHelper.idle() as ValidationStatus<TDetails>;
+    const snapshot: FieldSnapshot<TValues[typeof fieldName], TDetails> = {
       value,
       meta,
       validation,
@@ -756,30 +829,40 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     });
   }
 
-  const mountedFields = new Set<keyof T>();
+  const mountedFields = new Set<keyof TValues>();
 
-  const fieldOptions = new Map<keyof T, unknown>();
+  const fieldOptions = new Map<keyof TValues, unknown>();
 
-  function getFieldOptions<K extends keyof T>(
-    fieldName: K,
-  ): InternalFieldOptions<T, K, D> | undefined {
+  function getFieldOptions<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+  ): InternalFieldOptions<TValues, TFieldName, TDetails> | undefined {
     return fieldOptions.get(fieldName) as
-      | InternalFieldOptions<T, K, D>
+      | InternalFieldOptions<TValues, TFieldName, TDetails>
       | undefined;
   }
 
-  const reactions = new Map<keyof T, Map<FieldEvent, Set<keyof T>>>();
-  const targetReactionKeys = new Map<keyof T, Map<keyof T, Set<FieldEvent>>>();
-  const runningValidations = new Map<keyof T, RunningValidation<T[keyof T]>>();
-  const lastValidatedValue = new Map<keyof T, T[keyof T]>();
-  const lastValidatedChanges = new Map<keyof T, number>();
-  const validationIds = new Map<keyof T, number>();
-  const fieldPropsMap = new Map<keyof T, unknown>();
-  const fieldMountCounts = new Map<keyof T, number>();
-  const depVersionsBySlice = new Map<SliceId, Map<keyof T, number>>();
+  const reactions = new Map<
+    keyof TValues,
+    Map<FieldEvent, Set<keyof TValues>>
+  >();
+  const targetReactionKeys = new Map<
+    keyof TValues,
+    Map<keyof TValues, Set<FieldEvent>>
+  >();
+  const runningValidations = new Map<
+    keyof TValues,
+    RunningValidation<TValues[keyof TValues]>
+  >();
+  const lastValidatedValue = new Map<keyof TValues, TValues[keyof TValues]>();
+  const lastValidatedChanges = new Map<keyof TValues, number>();
+  const validationIds = new Map<keyof TValues, number>();
+  const fieldPropsMap = new Map<keyof TValues, unknown>();
+  const fieldMountCounts = new Map<keyof TValues, number>();
+  const depVersionsBySlice = new Map<SliceId, Map<keyof TValues, number>>();
 
-  function bumpDepVersion(slice: SliceId, fieldName: keyof T) {
-    const bySlice = depVersionsBySlice.get(slice) ?? new Map<keyof T, number>();
+  function bumpDepVersion(slice: SliceId, fieldName: keyof TValues) {
+    const bySlice =
+      depVersionsBySlice.get(slice) ?? new Map<keyof TValues, number>();
     const next = (bySlice.get(fieldName) ?? 0) + 1;
     bySlice.set(fieldName, next);
     depVersionsBySlice.set(slice, bySlice);
@@ -790,10 +873,10 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     if (!bySlice) {
       return 0;
     }
-    return bySlice.get(depKey.field as keyof T) ?? 0;
+    return bySlice.get(depKey.field as keyof TValues) ?? 0;
   }
 
-  function clearDepVersionsForField(fieldName: keyof T) {
+  function clearDepVersionsForField(fieldName: keyof TValues) {
     depVersionsBySlice.get("value")?.delete(fieldName);
     depVersionsBySlice.get("meta")?.delete(fieldName);
     depVersionsBySlice.get("validation")?.delete(fieldName);
@@ -802,20 +885,20 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   // -- Snapshot and dependency helpers (deduplicated)
-  function buildSnapshotFor<K extends keyof T>(
-    fieldName: K,
-    entry: FieldEntry<T[K], D>,
-  ): FieldSnapshot<T[K], D> {
+  function buildSnapshotFor<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+    entry: FieldEntry<TValues[TFieldName], TDetails>,
+  ): FieldSnapshot<TValues[TFieldName], TDetails> {
     return {
       value: entry.value,
       meta: entry.meta,
       validation: entry.validation,
       isMounted: mountedFields.has(fieldName),
-    } as FieldSnapshot<T[K], D>;
+    } as FieldSnapshot<TValues[TFieldName], TDetails>;
   }
 
   function updateSnapshotAndDeps(
-    fieldName: keyof T,
+    fieldName: keyof TValues,
     changedSlices: Iterable<SliceId>,
   ): void {
     const entry = getFieldEntry(fieldName);
@@ -854,19 +937,22 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     }
   }
 
-  function getRunningValidation<K extends keyof T>(
-    fieldName: K,
-  ): RunningValidation<T[K]> | undefined {
+  function getRunningValidation<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+  ): RunningValidation<TValues[TFieldName]> | undefined {
     return runningValidations.get(fieldName) as
-      | RunningValidation<T[K]>
+      | RunningValidation<TValues[TFieldName]>
       | undefined;
   }
 
-  function setRunningValidation<K extends keyof T>(
-    fieldName: K,
-    value: RunningValidation<T[K]>,
+  function setRunningValidation<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+    value: RunningValidation<TValues[TFieldName]>,
   ): void {
-    runningValidations.set(fieldName, value as RunningValidation<T[keyof T]>);
+    runningValidations.set(
+      fieldName,
+      value as RunningValidation<TValues[keyof TValues]>,
+    );
   }
 
   const watcherTransaction = {
@@ -879,13 +965,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   };
 
   // -- Internal getters/setters
-  function getFieldEntry<K extends keyof T>(fieldName: K): FieldEntry<T[K], D> {
+  function getFieldEntry<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+  ): FieldEntry<TValues[TFieldName], TDetails> {
     const entry = fieldsMap.get(fieldName);
 
     invariant(entry, `Unknown field: ${String(fieldName)}`);
 
     // The map is keyed by K so this cast is safe
-    return entry as FieldEntry<T[K], D>;
+    return entry as FieldEntry<TValues[TFieldName], TDetails>;
   }
 
   // -- Dispatch transaction wrapper
@@ -916,7 +1004,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   // -- Validation lifecycle
-  function cleanupValidation(fieldName: keyof T) {
+  function cleanupValidation(fieldName: keyof TValues) {
     const runningValidation = getRunningValidation(fieldName);
     if (!runningValidation) {
       return;
@@ -930,7 +1018,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     runningValidations.delete(fieldName);
   }
 
-  function clearValidationTimeout(fieldName: keyof T) {
+  function clearValidationTimeout(fieldName: keyof TValues) {
     const runningValidation = getRunningValidation(fieldName);
     if (!runningValidation) {
       return;
@@ -938,13 +1026,16 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     runningValidation.timeoutId = undefined;
   }
 
-  function incrementValidationId(fieldName: keyof T) {
+  function incrementValidationId(fieldName: keyof TValues) {
     const next = (validationIds.get(fieldName) ?? 0) + 1;
     validationIds.set(fieldName, next);
     return next;
   }
 
-  function setFieldState(fieldName: keyof T, state: ValidationStatus<D>) {
+  function setFieldState(
+    fieldName: keyof TValues,
+    state: ValidationStatus<TDetails>,
+  ) {
     const entry = getFieldEntry(fieldName);
     if (!deepEqual(entry.validation, state)) {
       entry.validation = state;
@@ -952,24 +1043,31 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     }
   }
 
-  function setLastValidatedValue<K extends keyof T>(fieldName: K, value: T[K]) {
+  function setLastValidatedValue<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+    value: TValues[TFieldName],
+  ) {
     lastValidatedValue.set(fieldName, value);
   }
 
-  function getLastValidatedValue<K extends keyof T>(
-    fieldName: K,
-  ): T[K] | undefined {
-    return lastValidatedValue.get(fieldName) as T[K] | undefined;
+  function getLastValidatedValue<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+  ): TValues[TFieldName] | undefined {
+    return lastValidatedValue.get(fieldName) as TValues[TFieldName] | undefined;
   }
 
-  function scheduleValidation<K extends keyof T>(
-    fieldName: K,
-    value: T[K],
+  function scheduleValidation<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+    value: TValues[TFieldName],
     debounceMs: number,
     action: FieldEvent,
     cause:
-      | { isSelf: true; field: K; action: FieldEvent }
-      | { isSelf: false; field: Exclude<keyof T, K>; action: FieldEvent },
+      | { isSelf: true; field: TFieldName; action: FieldEvent }
+      | {
+          isSelf: false;
+          field: Exclude<keyof TValues, TFieldName>;
+          action: FieldEvent;
+        },
   ) {
     cleanupValidation(fieldName);
     if (debounceMs === 0) {
@@ -987,13 +1085,17 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     });
   }
 
-  function runValidation<K extends keyof T>(
-    fieldName: K,
-    value: T[K],
+  function runValidation<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+    value: TValues[TFieldName],
     action: FieldEvent,
     cause:
-      | { isSelf: true; field: K; action: FieldEvent }
-      | { isSelf: false; field: Exclude<keyof T, K>; action: FieldEvent },
+      | { isSelf: true; field: TFieldName; action: FieldEvent }
+      | {
+          isSelf: false;
+          field: Exclude<keyof TValues, TFieldName>;
+          action: FieldEvent;
+        },
   ) {
     cleanupValidation(fieldName);
     const options = getFieldOptions(fieldName);
@@ -1082,13 +1184,17 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       });
   }
 
-  function handleAsyncFlow<K extends keyof T>(
-    fieldName: K,
+  function handleAsyncFlow<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
     flow: ValidationSchedule,
     action: FieldEvent,
     cause:
-      | { isSelf: true; field: K; action: FieldEvent }
-      | { isSelf: false; field: Exclude<keyof T, K>; action: FieldEvent },
+      | { isSelf: true; field: TFieldName; action: FieldEvent }
+      | {
+          isSelf: false;
+          field: Exclude<keyof TValues, TFieldName>;
+          action: FieldEvent;
+        },
   ) {
     const options = getFieldOptions(fieldName);
     if (!options?.respondAsync) {
@@ -1129,9 +1235,9 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   // -- Respond dispatch
-  function runRespond<K extends keyof T>(
-    target: K,
-    causeField: K | Exclude<keyof T, K>,
+  function runRespond<TFieldName extends keyof TValues>(
+    target: TFieldName,
+    causeField: TFieldName | Exclude<keyof TValues, TFieldName>,
     action: FieldEvent,
   ) {
     if (!mountedFields.has(target)) {
@@ -1145,7 +1251,11 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     if (!options.respond && !options.respondAsync) {
       return;
     }
-    const causeForTarget = makeCauseForTarget<T, K>(target, causeField, action);
+    const causeForTarget = makeCauseForTarget<TValues, TFieldName>(
+      target,
+      causeField,
+      action,
+    );
 
     if (!options.respond && options.respondAsync) {
       // No sync respond provided, but async path configured: run async
@@ -1157,14 +1267,18 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     const currentView = getSnapshot(target);
     const standardSchema = options.standardSchema;
 
-    let result: FinalValidationStatus<D> | ValidationSchedule | void;
+    let result: FinalValidationStatus<TDetails> | ValidationSchedule | void;
     const props = fieldPropsMap.get(target);
     if (options.respondAsync) {
-      const context: RespondContext<T, K, D> = {
+      const context: RespondContext<TValues, TFieldName, TDetails> = {
         action,
         cause: causeForTarget as
-          | { isSelf: true; field: K; action: FieldEvent }
-          | { isSelf: false; field: Exclude<keyof T, K>; action: FieldEvent },
+          | { isSelf: true; field: TFieldName; action: FieldEvent }
+          | {
+              isSelf: false;
+              field: Exclude<keyof TValues, TFieldName>;
+              action: FieldEvent;
+            },
         value: value,
         current: currentView,
         form,
@@ -1179,11 +1293,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       };
       result = options.respond?.(context, props);
     } else {
-      const ctxSync: RespondContextSync<T, K, D> = {
+      const ctxSync: RespondContextSync<TValues, TFieldName, TDetails> = {
         action,
         cause: causeForTarget as
-          | { isSelf: true; field: K; action: FieldEvent }
-          | { isSelf: false; field: Exclude<keyof T, K>; action: FieldEvent },
+          | { isSelf: true; field: TFieldName; action: FieldEvent }
+          | {
+              isSelf: false;
+              field: Exclude<keyof TValues, TFieldName>;
+              action: FieldEvent;
+            },
         value: value,
         current: currentView,
         form,
@@ -1198,7 +1316,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       result = options.respond?.(ctxSync, props);
     }
 
-    let outcome: FinalValidationStatus<D> | ValidationSchedule =
+    let outcome: FinalValidationStatus<TDetails> | ValidationSchedule =
       scheduleHelper.skip();
     if (result !== undefined) {
       outcome = result;
@@ -1213,7 +1331,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   // -- Reaction graph and dispatch
-  function dispatch(watched: keyof T, action: FieldEvent) {
+  function dispatch(watched: keyof TValues, action: FieldEvent) {
     runInDispatchTransaction(() => {
       const targets = reactions.get(watched)?.get(action);
       if (!targets) {
@@ -1262,11 +1380,11 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   function clearPreviousReactionsFor(
-    target: keyof T,
-  ): Map<keyof T, Set<FieldEvent>> {
+    target: keyof TValues,
+  ): Map<keyof TValues, Set<FieldEvent>> {
     const previous = targetReactionKeys.get(target);
     if (!previous) {
-      return new Map<keyof T, Set<FieldEvent>>();
+      return new Map<keyof TValues, Set<FieldEvent>>();
     }
     for (const [watched, actions] of previous.entries()) {
       const actionMap = reactions.get(watched);
@@ -1292,15 +1410,15 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   function addReactions(
-    watched: keyof T,
+    watched: keyof TValues,
     actions: Set<FieldEvent>,
-    target: keyof T,
-    keysForTarget: Map<keyof T, Set<FieldEvent>>,
+    target: keyof TValues,
+    keysForTarget: Map<keyof TValues, Set<FieldEvent>>,
   ) {
     const actionMap =
-      reactions.get(watched) ?? new Map<FieldEvent, Set<keyof T>>();
+      reactions.get(watched) ?? new Map<FieldEvent, Set<keyof TValues>>();
     for (const action of actions) {
-      const setForAction = actionMap.get(action) ?? new Set<keyof T>();
+      const setForAction = actionMap.get(action) ?? new Set<keyof TValues>();
       setForAction.add(target);
       actionMap.set(action, setForAction);
       const perWatched = keysForTarget.get(watched) ?? new Set<FieldEvent>();
@@ -1310,9 +1428,9 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     reactions.set(watched, actionMap);
   }
 
-  function registerReactionsFor<K extends keyof T>(
-    fieldName: K,
-    internal: InternalFieldOptions<T, K, D>,
+  function registerReactionsFor<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+    internal: InternalFieldOptions<TValues, TFieldName, TDetails>,
   ) {
     const keysForTarget = clearPreviousReactionsFor(fieldName);
 
@@ -1327,9 +1445,9 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     targetReactionKeys.set(fieldName, keysForTarget);
   }
 
-  function setValue<K extends keyof T>(
-    fieldName: K,
-    value: T[K],
+  function setValue<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+    value: TValues[TFieldName],
     options?: {
       markTouched?: boolean;
       incrementChanges?: boolean;
@@ -1373,7 +1491,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     });
   }
   function reset(
-    fieldName: keyof T,
+    fieldName: keyof TValues,
     options?: { meta?: boolean; validation?: boolean; dispatch?: boolean },
   ) {
     runInDispatchTransaction(() => {
@@ -1396,7 +1514,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       }
     });
   }
-  function touch(fieldName: keyof T) {
+  function touch(fieldName: keyof TValues) {
     runInDispatchTransaction(() => {
       const entry = getFieldEntry(fieldName);
       if (!entry.meta.isTouched) {
@@ -1405,9 +1523,9 @@ function createFormStore<T extends DefaultValues, D = unknown>(
       }
     });
   }
-  function submit(fieldNames?: readonly (keyof T)[]) {
+  function submit(fieldNames?: readonly (keyof TValues)[]) {
     const toSubmit = new Set(
-      fieldNames ?? (Object.keys(defaultValues) as (keyof T)[]),
+      fieldNames ?? (Object.keys(defaultValues) as (keyof TValues)[]),
     );
     runInDispatchTransaction(() => {
       for (const fieldName of toSubmit) {
@@ -1426,7 +1544,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   // -- Options helpers (extracted to reduce complexity)
-  function unregisterFieldOptions(fieldName: keyof T) {
+  function unregisterFieldOptions(fieldName: keyof TValues) {
     cleanupValidation(fieldName);
     clearPreviousReactionsFor(fieldName);
     targetReactionKeys.delete(fieldName);
@@ -1439,9 +1557,9 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     clearDepVersionsForField(fieldName);
   }
 
-  function settleIfAsyncDisabled<K extends keyof T>(
-    fieldName: K,
-    internal: InternalFieldOptions<T, K, D>,
+  function settleIfAsyncDisabled<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+    internal: InternalFieldOptions<TValues, TFieldName, TDetails>,
   ) {
     if (internal.respondAsync) {
       return;
@@ -1459,9 +1577,14 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   // -- Options registration lifecycle
-  function setFieldOptions<K extends keyof T, P = unknown>(
-    fieldName: K,
-    options: FieldOptions<T, K, D, P> | undefined,
+  function setFieldOptions<
+    TFieldName extends keyof TValues,
+    TFieldProps = unknown,
+  >(
+    fieldName: TFieldName,
+    options:
+      | FieldOptions<TValues, TFieldName, TDetails, TFieldProps>
+      | undefined,
   ) {
     // Wrap in a dispatch transaction so any state changes (e.g. settling
     // pending/validating when switching off async) notify subscribers.
@@ -1470,14 +1593,19 @@ function createFormStore<T extends DefaultValues, D = unknown>(
         unregisterFieldOptions(fieldName);
         return;
       }
-      const internal = normalizeFieldOptions<T, K, D, P>(fieldName, options);
+      const internal = normalizeFieldOptions<
+        TValues,
+        TFieldName,
+        TDetails,
+        TFieldProps
+      >(fieldName, options);
       fieldOptions.set(fieldName, internal);
       registerReactionsFor(fieldName, internal);
       settleIfAsyncDisabled(fieldName, internal);
     });
   }
 
-  function mount(fieldName: keyof T) {
+  function mount(fieldName: keyof TValues) {
     runInDispatchTransaction(() => {
       const nextCount = (fieldMountCounts.get(fieldName) ?? 0) + 1;
       fieldMountCounts.set(fieldName, nextCount);
@@ -1495,7 +1623,7 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     });
   }
 
-  function unmount(fieldName: keyof T) {
+  function unmount(fieldName: keyof TValues) {
     runInDispatchTransaction(() => {
       const current = fieldMountCounts.get(fieldName) ?? 0;
       const next = Math.max(0, current - 1);
@@ -1512,35 +1640,41 @@ function createFormStore<T extends DefaultValues, D = unknown>(
     });
   }
 
-  function blur(fieldName: keyof T) {
+  function blur(fieldName: keyof TValues) {
     dispatch(fieldName, "blur");
   }
 
-  function registerOptions<K extends keyof T, P = unknown>(
-    fieldName: K,
-    options: FieldOptions<T, K, D, P>,
+  function registerOptions<
+    TFieldName extends keyof TValues,
+    TFieldProps = unknown,
+  >(
+    fieldName: TFieldName,
+    options: FieldOptions<TValues, TFieldName, TDetails, TFieldProps>,
   ) {
     setFieldOptions(fieldName, options);
   }
 
-  function unregisterOptions(fieldName: keyof T) {
+  function unregisterOptions(fieldName: keyof TValues) {
     setFieldOptions(fieldName, undefined);
   }
 
-  function getSnapshot<K extends keyof T>(
-    fieldName: K,
-  ): FieldSnapshot<T[K], D> {
+  function getSnapshot<TFieldName extends keyof TValues>(
+    fieldName: TFieldName,
+  ): FieldSnapshot<TValues[TFieldName], TDetails> {
     const field = getFieldEntry(fieldName);
     // Return cached snapshot to preserve reference stability
     return field.snapshot;
   }
 
-  function setFieldProps<P>(
-    fieldName: keyof T,
-    props: P | undefined,
-    equality: (a: P | undefined, b: P | undefined) => boolean = shallow,
+  function setFieldProps<TFieldProps>(
+    fieldName: keyof TValues,
+    props: TFieldProps | undefined,
+    equality: (
+      a: TFieldProps | undefined,
+      b: TFieldProps | undefined,
+    ) => boolean = shallow,
   ) {
-    const prev = fieldPropsMap.get(fieldName) as P | undefined;
+    const prev = fieldPropsMap.get(fieldName) as TFieldProps | undefined;
     if (equality(prev, props)) {
       return;
     }
@@ -1562,25 +1696,29 @@ function createFormStore<T extends DefaultValues, D = unknown>(
   }
 
   // -- Select helpers (first-class)
-  const select: SelectHelpers<T, D> = {
-    value<K extends keyof T>(name: K): T[K] {
+  const select: SelectHelpers<TValues, TDetails> = {
+    value<TFieldName extends keyof TValues>(
+      name: TFieldName,
+    ): TValues[TFieldName] {
       return getFieldEntry(name).value;
     },
-    meta(name: keyof T): FieldMeta {
+    meta(name: keyof TValues): FieldMeta {
       return getFieldEntry(name).meta;
     },
-    validation(name: keyof T): ValidationStatus<D> {
+    validation(name: keyof TValues): ValidationStatus<TDetails> {
       return getFieldEntry(name).validation;
     },
-    snapshot<K extends keyof T>(name: K): FieldSnapshot<T[K], D> {
+    snapshot<TFieldName extends keyof TValues>(
+      name: TFieldName,
+    ): FieldSnapshot<TValues[TFieldName], TDetails> {
       return getSnapshot(name);
     },
-    mounted(name: keyof T): boolean {
+    mounted(name: keyof TValues): boolean {
       return mountedFields.has(name);
     },
   };
 
-  const store: FormStore<T, D> = {
+  const store: FormStore<TValues, TDetails> = {
     formApi: {
       getSnapshot,
     },
@@ -1617,38 +1755,47 @@ function createFormStore<T extends DefaultValues, D = unknown>(
 // =====================================
 
 function defineField<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-  P = undefined,
->(options: FieldOptions<T, K, D, P>): FieldOptions<T, K, D, P> {
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails = unknown,
+  TFieldProps = undefined,
+>(
+  options: FieldOptions<TValues, TFieldName, TDetails, TFieldProps>,
+): FieldOptions<TValues, TFieldName, TDetails, TFieldProps> {
   return options;
 }
 
-function defineForm<T extends DefaultValues>(
-  formOptions: UseFormOptions<T>,
-): UseFormOptions<T> {
+function defineForm<TValues extends DefaultValues>(
+  formOptions: UseFormOptions<TValues>,
+): UseFormOptions<TValues> {
   return formOptions;
 }
 
 function defineSelector<
-  T extends DefaultValues,
-  D = unknown,
-  S = unknown,
-  P = undefined,
+  TValues extends DefaultValues,
+  TDetails = unknown,
+  TSelected = unknown,
+  TSelectorProps = undefined,
 >(
-  selector: (s: SelectHelpers<T, D>, props?: P) => S,
-): (s: SelectHelpers<T, D>, props?: P) => S {
+  selector: (
+    s: SelectHelpers<TValues, TDetails>,
+    props?: TSelectorProps,
+  ) => TSelected,
+): (s: SelectHelpers<TValues, TDetails>, props?: TSelectorProps) => TSelected {
   return selector;
 }
 
 // First-class select helpers typing
-export type SelectHelpers<T extends DefaultValues, D = unknown> = {
-  value: <K extends keyof T>(name: K) => T[K];
-  meta: (name: keyof T) => FieldMeta;
-  validation: (name: keyof T) => ValidationStatus<D>;
-  snapshot: <K extends keyof T>(name: K) => FieldSnapshot<T[K], D>;
-  mounted: (name: keyof T) => boolean;
+export type SelectHelpers<TValues extends DefaultValues, TDetails = unknown> = {
+  value: <TFieldName extends keyof TValues>(
+    name: TFieldName,
+  ) => TValues[TFieldName];
+  meta: (name: keyof TValues) => FieldMeta;
+  validation: (name: keyof TValues) => ValidationStatus<TDetails>;
+  snapshot: <TFieldName extends keyof TValues>(
+    name: TFieldName,
+  ) => FieldSnapshot<TValues[TFieldName], TDetails>;
+  mounted: (name: keyof TValues) => boolean;
 };
 
 // =====================================
@@ -1656,19 +1803,25 @@ export type SelectHelpers<T extends DefaultValues, D = unknown> = {
 // =====================================
 
 export function useFormSelector<
-  T extends DefaultValues,
-  D = unknown,
-  S = unknown,
-  P = unknown,
+  TValues extends DefaultValues,
+  TDetails = unknown,
+  TSelected = unknown,
+  TSelectorProps = unknown,
 >(
-  selector: (s: SelectHelpers<T, D>, props?: P) => S,
+  selector: (
+    s: SelectHelpers<TValues, TDetails>,
+    props?: TSelectorProps,
+  ) => TSelected,
   options?: {
-    selectorEquality?: (a: S, b: S) => boolean;
-    propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
-    props?: P;
+    selectorEquality?: (a: TSelected, b: TSelected) => boolean;
+    propsEquality?: (
+      a: TSelectorProps | undefined,
+      b: TSelectorProps | undefined,
+    ) => boolean;
+    props?: TSelectorProps;
   },
-): S {
-  const store = use(StoreContext) as FormStore<T, D> | null;
+): TSelected {
+  const store = use(StoreContext) as FormStore<TValues, TDetails> | null;
   invariant(store, "useFormSelector must be used within a FormProvider");
 
   const {
@@ -1677,10 +1830,12 @@ export function useFormSelector<
     props,
   } = options ?? {};
 
-  const lastSelectedRef = useRef<S | undefined>(undefined);
-  const lastPropsRef = useRef<P | undefined>(undefined);
-  const usedDepsBySliceRef = useRef<Map<SliceId, Set<keyof T>>>(new Map());
-  const lastDepVersionsRef = useRef<Map<SliceId, Map<keyof T, number>>>(
+  const lastSelectedRef = useRef<TSelected | undefined>(undefined);
+  const lastPropsRef = useRef<TSelectorProps | undefined>(undefined);
+  const usedDepsBySliceRef = useRef<Map<SliceId, Set<keyof TValues>>>(
+    new Map(),
+  );
+  const lastDepVersionsRef = useRef<Map<SliceId, Map<keyof TValues, number>>>(
     new Map(),
   );
 
@@ -1693,8 +1848,9 @@ export function useFormSelector<
     if (!propsChanged && prev !== undefined) {
       let anyChanged = false;
       for (const [slice, fields] of usedDepsBySliceRef.current) {
-        const lastByField: Map<keyof T, number> =
-          lastDepVersionsRef.current.get(slice) ?? new Map<keyof T, number>();
+        const lastByField: Map<keyof TValues, number> =
+          lastDepVersionsRef.current.get(slice) ??
+          new Map<keyof TValues, number>();
         for (const field of fields) {
           const last = lastByField.get(field) ?? 0;
           const curr = store.getDepVersion({ slice, field });
@@ -1713,34 +1869,38 @@ export function useFormSelector<
     }
 
     // Track dependencies during selection
-    const nextUsed = new Map<SliceId, Set<keyof T>>();
-    const trackingSelect: SelectHelpers<T, D> = {
-      value: <K extends keyof T>(name: K): T[K] => {
-        const set = nextUsed.get("value") ?? new Set<keyof T>();
+    const nextUsed = new Map<SliceId, Set<keyof TValues>>();
+    const trackingSelect: SelectHelpers<TValues, TDetails> = {
+      value: <TFieldName extends keyof TValues>(
+        name: TFieldName,
+      ): TValues[TFieldName] => {
+        const set = nextUsed.get("value") ?? new Set<keyof TValues>();
         set.add(name);
         nextUsed.set("value", set);
         return store.select.value(name);
       },
       meta: (name) => {
-        const set = nextUsed.get("meta") ?? new Set<keyof T>();
+        const set = nextUsed.get("meta") ?? new Set<keyof TValues>();
         set.add(name);
         nextUsed.set("meta", set);
         return store.select.meta(name);
       },
       validation: (name) => {
-        const set = nextUsed.get("validation") ?? new Set<keyof T>();
+        const set = nextUsed.get("validation") ?? new Set<keyof TValues>();
         set.add(name);
         nextUsed.set("validation", set);
         return store.select.validation(name);
       },
-      snapshot: <K extends keyof T>(name: K): FieldSnapshot<T[K], D> => {
-        const set = nextUsed.get("snapshot") ?? new Set<keyof T>();
+      snapshot: <TFieldName extends keyof TValues>(
+        name: TFieldName,
+      ): FieldSnapshot<TValues[TFieldName], TDetails> => {
+        const set = nextUsed.get("snapshot") ?? new Set<keyof TValues>();
         set.add(name);
         nextUsed.set("snapshot", set);
         return store.select.snapshot(name);
       },
       mounted: (name) => {
-        const set = nextUsed.get("mounted") ?? new Set<keyof T>();
+        const set = nextUsed.get("mounted") ?? new Set<keyof TValues>();
         set.add(name);
         nextUsed.set("mounted", set);
         return store.select.mounted(name);
@@ -1750,9 +1910,9 @@ export function useFormSelector<
     const next = selector(trackingSelect, props);
 
     // Snapshot dependency versions for the next run
-    const newVersions = new Map<SliceId, Map<keyof T, number>>();
+    const newVersions = new Map<SliceId, Map<keyof TValues, number>>();
     for (const [slice, fields] of nextUsed) {
-      const versionsByField = new Map<keyof T, number>();
+      const versionsByField = new Map<keyof TValues, number>();
       for (const field of fields) {
         versionsByField.set(field, store.getDepVersion({ slice, field }));
       }
@@ -1788,18 +1948,21 @@ export function useFormSelector<
 // =====================================
 
 function useField<
-  T extends DefaultValues,
-  K extends keyof T,
-  D = unknown,
-  P = unknown,
+  TValues extends DefaultValues,
+  TFieldName extends keyof TValues,
+  TDetails = unknown,
+  TFieldProps = unknown,
 >(
-  options: FieldOptions<T, K, D, P>,
+  options: FieldOptions<TValues, TFieldName, TDetails, TFieldProps>,
   propsOptions?: {
-    props?: P;
-    propsEquality?: (a: P | undefined, b: P | undefined) => boolean;
+    props?: TFieldProps;
+    propsEquality?: (
+      a: TFieldProps | undefined,
+      b: TFieldProps | undefined,
+    ) => boolean;
   },
-): Prettify<UseFieldReturn<T, K, D>> {
-  const store = use(StoreContext) as FormStore<T, D> | null;
+): Prettify<UseFieldReturn<TValues, TFieldName, TDetails>> {
+  const store = use(StoreContext) as FormStore<TValues, TDetails> | null;
 
   invariant(store, "useField must be used within a FormProvider");
 
@@ -1816,7 +1979,7 @@ function useField<
       watch,
       respond,
       standardSchema,
-    } as FieldOptions<T, K, D, P>);
+    } as FieldOptions<TValues, TFieldName, TDetails, TFieldProps>);
 
     return () => {
       store.unregisterOptions(name);
@@ -1837,7 +2000,7 @@ function useField<
 
   const { value, meta, validation } = useFormSelector(
     useCallback(
-      (select: SelectHelpers<T, D>) => {
+      (select: SelectHelpers<TValues, TDetails>) => {
         return {
           value: select.value(name),
           meta: select.meta(name),
@@ -1849,7 +2012,7 @@ function useField<
   );
 
   const setValue = useCallback(
-    (value: T[K]) => {
+    (value: TValues[TFieldName]) => {
       store.setValue(name, value);
     },
     [name, store],
@@ -1864,10 +2027,12 @@ function useField<
   return { blur, formApi, meta, name, setValue, validation, value };
 }
 
-export function useForm<T extends DefaultValues, D = unknown>(
-  options: UseFormOptions<T>,
-): UseFormReturn<T, D> {
-  const [formStore] = useState(() => createFormStore<T, D>(options));
+export function useForm<TValues extends DefaultValues, TDetails = unknown>(
+  options: UseFormOptions<TValues>,
+): UseFormReturn<TValues, TDetails> {
+  const [formStore] = useState(() =>
+    createFormStore<TValues, TDetails>(options),
+  );
 
   const Form = useCallback(
     (props: React.ComponentProps<"form">) => (
@@ -1884,9 +2049,9 @@ export function useForm<T extends DefaultValues, D = unknown>(
 }
 
 export function createForm<
-  T extends DefaultValues,
-  D = unknown,
->(): CreateFormResult<T, D> {
+  TValues extends DefaultValues,
+  TDetails = unknown,
+>(): CreateFormResult<TValues, TDetails> {
   return {
     defineField,
     defineForm,

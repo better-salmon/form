@@ -1,8 +1,8 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
-export function standardValidate<T extends StandardSchemaV1>(
-  schema: T,
-  input: StandardSchemaV1.InferInput<T>,
+export function standardValidate<TSchema extends StandardSchemaV1>(
+  schema: TSchema,
+  input: StandardSchemaV1.InferInput<TSchema>,
 ) {
   const result = schema["~standard"].validate(input);
 
@@ -17,9 +17,9 @@ export function standardValidate<T extends StandardSchemaV1>(
   return result.issues;
 }
 
-export async function standardValidateAsync<T extends StandardSchemaV1>(
-  schema: T,
-  input: StandardSchemaV1.InferInput<T>,
+export async function standardValidateAsync<TSchema extends StandardSchemaV1>(
+  schema: TSchema,
+  input: StandardSchemaV1.InferInput<TSchema>,
 ) {
   const result = await schema["~standard"].validate(input);
 
