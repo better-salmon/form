@@ -1,4 +1,4 @@
-export function shallow<T>(a: T, b: T): boolean {
+export function shallow<TValue>(a: TValue, b: TValue): boolean {
   if (Object.is(a, b)) {
     return true;
   }
@@ -19,7 +19,7 @@ export function shallow<T>(a: T, b: T): boolean {
   }
 
   for (const aKey of aKeys) {
-    const key = aKey as keyof T & string;
+    const key = aKey as keyof TValue & string;
 
     if (!Object.prototype.hasOwnProperty.call(b, key)) {
       return false;

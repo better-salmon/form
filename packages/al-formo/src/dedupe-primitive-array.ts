@@ -1,5 +1,5 @@
 export function dedupePrimitiveArray<
-  T extends string | number | boolean | symbol,
->(array: T[]): T[] {
+  TPrimitive extends string | number | boolean | symbol,
+>(array: TPrimitive[]): TPrimitive[] {
   return [...new Set(array)];
 }
