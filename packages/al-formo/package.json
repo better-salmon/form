@@ -35,11 +35,11 @@
   },
   "devDependencies": {
     "@repo/shared-eslint": "workspace:*",
-    "@types/node": "24.3.1",
-    "@types/react": "19.1.12",
+    "@types/node": "24.4.0",
+    "@types/react": "19.1.13",
     "eslint": "9.35.0",
     "publint": "0.3.12",
-    "tsdown": "0.15.0",
+    "tsdown": "0.15.1",
     "typescript": "5.9.2",
     "vitest": "3.2.4"
   },
