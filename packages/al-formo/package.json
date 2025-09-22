@@ -37,9 +37,9 @@
     "@repo/shared-eslint": "workspace:*",
     "@types/node": "24.5.2",
     "@types/react": "19.1.13",
-    "eslint": "9.35.0",
+    "eslint": "9.36.0",
     "publint": "0.3.13",
-    "tsdown": "0.15.2",
+    "tsdown": "0.15.4",
     "typescript": "5.9.2",
     "vitest": "3.2.4"
   },
