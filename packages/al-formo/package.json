@@ -35,7 +35,7 @@
   },
   "devDependencies": {
     "@repo/shared-eslint": "workspace:*",
-    "@types/node": "24.7.2",
+    "@types/node": "24.8.0",
     "@types/react": "19.2.2",
     "eslint": "9.37.0",
     "publint": "0.3.14",
