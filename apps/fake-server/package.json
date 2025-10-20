@@ -12,7 +12,7 @@
   "devDependencies": {
     "@repo/shared-eslint": "workspace:*",
     "@types/node": "24.8.1",
-    "eslint": "9.37.0",
+    "eslint": "9.38.0",
     "typescript": "5.9.3"
   }
 }
