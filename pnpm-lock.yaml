@@ -54,8 +54,8 @@ importers:
         specifier: 3.4.0
         version: 3.4.0
       zod:
-        specifier: 4.1.13
-        version: 4.1.13
+        specifier: 4.2.0
+        version: 4.2.0
     devDependencies:
       '@repo/shared-eslint':
         specifier: workspace:*
@@ -2860,6 +2860,7 @@ packages:
   tsdown@0.17.3:
     resolution: {integrity: sha512-bgLgTog+oyadDTr9SZ57jZtb+A4aglCjo3xgJrkCDxbzcQl2l2iDDr4b06XHSQHwyDNIhYFDgPRhuu1wL3pNsw==}
     engines: {node: '>=20.19.0'}
+    deprecated: Including an unexpected breaking change (copy behavior)
     hasBin: true
     peerDependencies:
       '@arethetypeswrong/core': ^0.18.1
@@ -3111,8 +3112,8 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zod@4.1.13:
-    resolution: {integrity: sha512-AvvthqfqrAhNH9dnfmrfKzX5upOdjUVJYFqNSlkmGf64gRaTzlPwz99IHYnVs28qYAybvAlBV+H7pn0saFY4Ig==}
+  zod@4.2.0:
+    resolution: {integrity: sha512-Bd5fw9wlIhtqCCxotZgdTOMwGm1a0u75wARVEY9HMs1X17trvA/lMi4+MGK5EUfYkXVTbX8UDiDKW4OgzHVUZw==}
 
 snapshots:
 
@@ -3579,7 +3580,7 @@ snapshots:
       '@eslint-react/eff': 1.53.1
       '@typescript-eslint/utils': 8.43.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3)
       ts-pattern: 5.8.0
-      zod: 4.1.13
+      zod: 4.2.0
     transitivePeerDependencies:
       - eslint
       - supports-color
@@ -3591,7 +3592,7 @@ snapshots:
       '@eslint-react/kit': 1.53.1(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3)
       '@typescript-eslint/utils': 8.43.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3)
       ts-pattern: 5.8.0
-      zod: 4.1.13
+      zod: 4.2.0
     transitivePeerDependencies:
       - eslint
       - supports-color
@@ -4786,8 +4787,8 @@ snapshots:
       '@babel/core': 7.28.4
       '@babel/parser': 7.28.4
       eslint: 9.39.1(jiti@2.6.1)
-      zod: 4.1.13
-      zod-validation-error: 4.0.2(zod@4.1.13)
+      zod: 4.2.0
+      zod-validation-error: 4.0.2(zod@4.2.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -6217,10 +6218,10 @@ snapshots:
     dependencies:
       zod: 3.25.76
 
-  zod-validation-error@4.0.2(zod@4.1.13):
+  zod-validation-error@4.0.2(zod@4.2.0):
     dependencies:
-      zod: 4.1.13
+      zod: 4.2.0
 
   zod@3.25.76: {}
 
-  zod@4.1.13: {}
+  zod@4.2.0: {}
