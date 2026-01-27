@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.58.0",
-    "@types/node": "24.10.2",
+    "@types/node": "25.0.10",
     "playwright": "1.58.0",
     "prettier": "3.8.1",
     "prettier-plugin-packagejson": "2.5.22",
